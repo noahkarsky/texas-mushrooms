@@ -145,19 +145,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--days-csv",
         type=Path,
-        default=Path("data/days.csv"),
+        default=Path("data/raw/days.csv"),
         help="Path to days.csv",
     )
     parser.add_argument(
         "--weather-csv",
         type=Path,
-        default=Path("data/weather/daily_weather.csv"),
+        default=Path("data/external/daily_weather.csv"),
         help="Path to daily_weather.csv",
     )
     parser.add_argument(
         "--outdir",
         type=Path,
-        default=Path("data/model"),
+        default=Path("data/processed"),
         help="Output directory for modeling dataset",
     )
 

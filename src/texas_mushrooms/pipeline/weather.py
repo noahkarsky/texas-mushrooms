@@ -193,11 +193,11 @@ def build_and_save_weather_dataset(
     # but structure allows for it here)
 
     if output_dir is None:
-        # Default to repo_root/data/weather
-        # Assuming this script is in src/texas_mushrooms/weather.py
+        # Default to repo_root/data/external
+        # Assuming this script is in src/texas_mushrooms/pipeline/weather.py
         # We can try to resolve relative to CWD or relative to file.
-        # Given the prompt implies running from repo root, Path("data") / "weather" is safe.
-        output_dir = Path("data") / "weather"
+        # Given the prompt implies running from repo root, Path("data") / "external" is safe.
+        output_dir = Path("data") / "external"
 
     _ensure_directory(output_dir)
 
@@ -225,8 +225,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--days-csv",
         type=Path,
-        default=Path("data/days.csv"),
-        help="Path to the days CSV file (default: data/days.csv)",
+        default=Path("data/raw/days.csv"),
+        help="Path to the days CSV file (default: data/raw/days.csv)",
     )
     parser.add_argument(
         "--lat",
@@ -249,8 +249,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--outdir",
         type=Path,
-        default=Path("data/weather"),
-        help="Output directory (default: data/weather)",
+        default=Path("data/external"),
+        help="Output directory (default: data/external)",
     )
 
     args = parser.parse_args()

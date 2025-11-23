@@ -25,12 +25,13 @@ logger = logging.getLogger(__name__)
 # ----------------------------
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data"
-DERIVED_DIR = DATA_DIR / "derived"
+RAW_DIR = DATA_DIR / "raw"
+DERIVED_DIR = DATA_DIR / "processed"
 DERIVED_DIR.mkdir(parents=True, exist_ok=True)
 
 logger.info(f"Repo root: {REPO_ROOT}")
-logger.info(f"Data dir: {DATA_DIR}")
-logger.info(f"Derived dir: {DERIVED_DIR}")
+logger.info(f"Raw data dir: {RAW_DIR}")
+logger.info(f"Processed dir: {DERIVED_DIR}")
 
 
 # ----------------------------
@@ -79,8 +80,8 @@ def extract_weather_metrics(summary: str) -> dict[str, float | None]:
 # Load data
 # ----------------------------
 logger.info("Loading data files...")
-days_df = pd.read_csv(DATA_DIR / "days.csv")
-photos_df = pd.read_csv(DATA_DIR / "photos.csv")
+days_df = pd.read_csv(RAW_DIR / "days.csv")
+photos_df = pd.read_csv(RAW_DIR / "photos.csv")
 logger.info(f"Loaded {len(days_df)} day records and {len(photos_df)} photo records")
 logger.debug(f"Days columns: {list(days_df.columns)}")
 logger.debug(f"Photos columns: {list(photos_df.columns)}")

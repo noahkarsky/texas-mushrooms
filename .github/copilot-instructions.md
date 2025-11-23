@@ -6,15 +6,15 @@ Web scraper and data pipeline for `texasmushrooms.org`. Extracts daily mushroom 
 ## Architecture
 - **Entry Points**:
   - `src/texas_mushrooms/cli.py`: Main CLI for scraping (`crawl`) and image downloading.
-  - `src/texas_mushrooms/weather.py`: Fetches historical weather from Open-Meteo.
-  - `src/texas_mushrooms/daily_dataset.py`: Processes raw data into analysis-ready datasets (feature engineering).
-- **Core Logic**: `src/texas_mushrooms/scraper.py` handles HTML parsing and navigation.
-- **Data Models**: `src/texas_mushrooms/models.py` uses Python `dataclasses` (`DayPage`, `PhotoRecord`) as the internal schema.
+  - `src/texas_mushrooms/pipeline/weather.py`: Fetches historical weather from Open-Meteo.
+  - `src/texas_mushrooms/pipeline/processing.py`: Processes raw data into analysis-ready datasets (feature engineering).
+- **Core Logic**: `src/texas_mushrooms/scrape/core.py` handles HTML parsing and navigation.
+- **Data Models**: `src/texas_mushrooms/scrape/schemas.py` uses Python `dataclasses` (`DayPage`, `PhotoRecord`) as the internal schema.
 - **Data Flow**:
-  1. `cli.py` -> `scraper.py`: Scrapes site -> `DayPage` objects.
-  2. `cli.py`: Exports raw metadata to `data/days.csv` and `data/photos.csv`.
-  3. `weather.py`: Reads date range from `days.csv` -> fetches Open-Meteo data -> `data/weather/`.
-  4. `daily_dataset.py`: Merges mushroom data + weather -> `data/derived/`.
+  1. `cli.py` -> `scrape/core.py`: Scrapes site -> `DayPage` objects.
+  2. `cli.py`: Exports raw metadata to `data/raw/days.csv` and `data/raw/photos.csv`.
+  3. `pipeline/weather.py`: Reads date range from `days.csv` -> fetches Open-Meteo data -> `data/external/`.
+  4. `pipeline/processing.py`: Merges mushroom data + weather -> `data/processed/`.
 
 ## Critical Workflows
 
@@ -27,14 +27,14 @@ python -m texas_mushrooms.cli crawl --limit 5
 # Full crawl with images (long running)
 python -m texas_mushrooms.cli crawl --delay 1.0 --download-images
 
-# Fetch weather history (requires data/days.csv)
-python -m texas_mushrooms.weather
+# Fetch weather history (requires data/raw/days.csv)
+python -m texas_mushrooms.pipeline.weather
 ```
 
 ### Data Processing
 Generate derived datasets (features, cleaned data) for analysis:
 ```powershell
-python -m texas_mushrooms.daily_dataset
+python -m texas_mushrooms.pipeline.processing
 ```
 
 ### Development
@@ -59,7 +59,7 @@ Follow Edward Tufte's principles for all plots (in notebooks or scripts):
 - Use color effectively (not decoratively).
 
 ## Key Files
-- `src/texas_mushrooms/models.py`: Data schema (dataclasses).
-- `src/texas_mushrooms/scraper.py`: Scraping logic.
-- `src/texas_mushrooms/daily_dataset.py`: Feature engineering & data merging.
+- `src/texas_mushrooms/scrape/schemas.py`: Data schema (dataclasses).
+- `src/texas_mushrooms/scrape/core.py`: Scraping logic.
+- `src/texas_mushrooms/pipeline/processing.py`: Feature engineering & data merging.
 - `pyproject.toml`: Dependencies & tool config.

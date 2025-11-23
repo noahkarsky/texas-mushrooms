@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from .models import DayPage, PhotoRecord, SpeciesRef
+from .schemas import DayPage, PhotoRecord, SpeciesRef
 
 logger = logging.getLogger(__name__)
 

@@ -31,7 +31,7 @@ Crawl the first 5 days to test:
 python -m texas_mushrooms.cli crawl --limit 5 --delay 1.0
 ```
 
-This will create `data/days.parquet` and `data/photos.parquet`.
+This will create `data/raw/days.csv` and `data/raw/photos.csv`.
 
 ### Crawl with Image Download
 
@@ -41,7 +41,7 @@ To download images as well:
 python -m texas_mushrooms.cli crawl --limit 5 --download-images
 ```
 
-Images will be saved in `data/images/YYYY-MM-DD/`.
+Images will be saved in `data/raw/images/YYYY-MM-DD/`.
 
 ### Full Crawl
 
@@ -64,17 +64,28 @@ Coordinates (latitude/longitude) are extracted automatically; no extra flags nee
 To build a clean daily weather dataset corresponding to the mushroom observation dates:
 
 ```bash
-python -m texas_mushrooms.weather
+python -m texas_mushrooms.pipeline.weather
 ```
 
-This infers the date range from `data/days.csv` and saves weather data to `data/weather/`.
+This infers the date range from `data/raw/days.csv` and saves weather data to `data/external/`.
+
+### Process Data
+
+To generate modeling datasets and derived features:
+
+```bash
+python -m texas_mushrooms.pipeline.processing
+```
+
+This reads from `data/raw` and `data/external` and outputs to `data/processed`.
 
 ## Data Output
 
--   `data/days.parquet` / `data/days.csv`: Page-level metadata (date, weather, species list text, KMZ link, `latitude`, `longitude`, `photo_count`).
--   `data/photos.parquet` / `data/photos.csv`: Photo-level metadata (caption, species tags, image URL, per-photo `latitude` / `longitude` when resolvable from KMZ, else the day default).
--   `data/weather/daily_weather.parquet` / `csv`: Daily weather metrics (temperature, precipitation, wind, humidity) from Open-Meteo.
--   `data/images/`: Directory containing downloaded images organized by date.
+-   `data/raw/days.csv`: Page-level metadata (date, weather, species list text, KMZ link, `latitude`, `longitude`, `photo_count`).
+-   `data/raw/photos.csv`: Photo-level metadata (caption, species tags, image URL, per-photo `latitude` / `longitude` when resolvable from KMZ, else the day default).
+-   `data/external/daily_weather.csv`: Daily weather metrics (temperature, precipitation, wind, humidity) from Open-Meteo.
+-   `data/processed/mushroom_daily.parquet` / `csv`: Merged dataset ready for modeling.
+-   `data/raw/images/`: Directory containing downloaded images organized by date.
 
 ### Geolocation Details
 
@@ -134,4 +145,34 @@ texas-mushrooms
 └─ tests
    └─ test_scraper.py
 
+```
+
+```
+texas-mushrooms
+├─ .pre-commit-config.yaml
+├─ LICENSE
+├─ notebooks
+│  ├─ EDA.ipynb
+│  └─ pre-process-data.py
+├─ poetry.lock
+├─ pyproject.toml
+├─ README.md
+├─ src
+│  ├─ texas_mushrooms
+│  │  ├─ art
+│  │  │  └─ __init__.py
+│  │  ├─ cli.py
+│  │  ├─ modeling
+│  │  │  └─ __init__.py
+│  │  ├─ pipeline
+│  │  │  ├─ processing.py
+│  │  │  ├─ weather.py
+│  │  │  └─ __init__.py
+│  │  ├─ scrape
+│  │  │  ├─ core.py
+│  │  │  ├─ schemas.py
+│  │  │  └─ __init__.py
+│  │  └─ __init__.py
+└─ tests
+   └─ test_scraper.py
 ```

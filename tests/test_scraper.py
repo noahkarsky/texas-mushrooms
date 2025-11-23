@@ -1,8 +1,8 @@
 from datetime import date
 from bs4 import BeautifulSoup
 from unittest.mock import MagicMock
-from texas_mushrooms.scraper import parse_index, parse_photos
-from texas_mushrooms.models import DayPage
+from texas_mushrooms.scrape.core import parse_index, parse_photos
+from texas_mushrooms.scrape.schemas import DayPage
 
 
 def test_parse_index_extracts_dates() -> None:

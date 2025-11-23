@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .scraper import crawl
+from .scrape.core import crawl
 
 
 def setup_logging() -> None:
@@ -32,7 +32,7 @@ def main() -> None:
         "--delay", type=float, default=1.0, help="Delay between requests in seconds"
     )
     crawl_parser.add_argument(
-        "--out-dir", type=str, default="data", help="Output directory for data"
+        "--out-dir", type=str, default="data/raw", help="Output directory for data"
     )
     crawl_parser.add_argument(
         "--download-images", action="store_true", help="Download images while crawling"
@@ -40,7 +40,7 @@ def main() -> None:
     crawl_parser.add_argument(
         "--image-dir",
         type=str,
-        default="data/images",
+        default="data/raw/images",
         help="Directory to save downloaded images",
     )
 
