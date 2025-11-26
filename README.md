@@ -125,7 +125,6 @@ ruff check src
 ```
 texas-mushrooms
 ├─ .pre-commit-config.yaml
-├─ check_coords.py
 ├─ LICENSE
 ├─ notebooks
 │  ├─ EDA.ipynb
@@ -136,43 +135,21 @@ texas-mushrooms
 ├─ src
 │  ├─ modeling
 │  └─ texas_mushrooms
+│     ├─ art
+│     │  └─ __init__.py
 │     ├─ cli.py
-│     ├─ daily_dataset.py
-│     ├─ models.py
-│     ├─ scraper.py
-│     ├─ weather.py
+│     ├─ modeling
+│     │  └─ __init__.py
+│     ├─ pipeline
+│     │  ├─ processing.py
+│     │  ├─ weather.py
+│     │  └─ __init__.py
+│     ├─ scrape
+│     │  ├─ core.py
+│     │  ├─ schemas.py
+│     │  └─ __init__.py
 │     └─ __init__.py
 └─ tests
    └─ test_scraper.py
 
-```
-
-```
-texas-mushrooms
-├─ .pre-commit-config.yaml
-├─ LICENSE
-├─ notebooks
-│  ├─ EDA.ipynb
-│  └─ pre-process-data.py
-├─ poetry.lock
-├─ pyproject.toml
-├─ README.md
-├─ src
-│  ├─ texas_mushrooms
-│  │  ├─ art
-│  │  │  └─ __init__.py
-│  │  ├─ cli.py
-│  │  ├─ modeling
-│  │  │  └─ __init__.py
-│  │  ├─ pipeline
-│  │  │  ├─ processing.py
-│  │  │  ├─ weather.py
-│  │  │  └─ __init__.py
-│  │  ├─ scrape
-│  │  │  ├─ core.py
-│  │  │  ├─ schemas.py
-│  │  │  └─ __init__.py
-│  │  └─ __init__.py
-└─ tests
-   └─ test_scraper.py
 ```

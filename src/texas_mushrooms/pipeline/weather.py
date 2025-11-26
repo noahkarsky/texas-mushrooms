@@ -47,6 +47,8 @@ def fetch_daily_weather(
         "wind_speed_10m_max",
         "wind_speed_10m_mean",
         "relative_humidity_2m_mean",
+        "soil_temperature_0_to_7cm_mean",
+        "soil_moisture_0_to_7cm_mean",
     ]
 
     params = {
@@ -100,6 +102,8 @@ def fetch_daily_weather(
         "wind_speed_10m_max": "wind_speed_max",
         "wind_speed_10m_mean": "wind_speed_mean",
         "relative_humidity_2m_mean": "relative_humidity_mean",
+        "soil_temperature_0_to_7cm_mean": "soil_temp_mean",
+        "soil_moisture_0_to_7cm_mean": "soil_moisture_mean",
     }
 
     df = df.rename(columns=column_mapping)
@@ -216,6 +220,38 @@ def build_and_save_weather_dataset(
     print(weather_df.head())
 
     return weather_df
+
+
+def fetch_elevation_batch(
+    latitudes: list[float],
+    longitudes: list[float],
+) -> list[float | None]:
+    """
+    Fetch elevation for a batch of coordinates using Open-Meteo Elevation API.
+
+    Args:
+        latitudes: List of latitudes.
+        longitudes: List of longitudes.
+
+    Returns:
+        List of elevations in meters.
+    """
+    url = "https://api.open-meteo.com/v1/elevation"
+
+    # Open-Meteo accepts comma-separated lists
+    params = {
+        "latitude": ",".join(map(str, latitudes)),
+        "longitude": ",".join(map(str, longitudes)),
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("elevation", [None] * len(latitudes))  # type: ignore
+    except requests.RequestException as e:
+        print(f"Warning: Failed to fetch elevation: {e}")
+        return [None] * len(latitudes)
 
 
 if __name__ == "__main__":

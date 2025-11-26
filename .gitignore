@@ -181,8 +181,6 @@ cython_debug/
 .cursorindexingignore
 
 # Project specific
-data/
-*.parquet
-*.csv
+data/raw/images/
 .mypy_cache/
 .ruff_cache/
