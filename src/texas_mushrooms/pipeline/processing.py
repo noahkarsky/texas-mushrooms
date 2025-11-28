@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from texas_mushrooms.config.filter_config import MushroomFilter
+    from texas_mushrooms.config.filter_config import MushroomFilter, SpatialFilter
 
 logger = logging.getLogger(__name__)
 
@@ -419,6 +419,7 @@ def run_preprocessing(
     output_dir: Path,
     filter_years: bool = True,
     filter_species: bool = True,
+    spatial_filter: SpatialFilter | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     Run the full preprocessing pipeline on raw scraped data.
@@ -429,6 +430,7 @@ def run_preprocessing(
         filter_years: If True, filter to START_YEAR-END_YEAR range.
         filter_species: If True, apply mushroom taxonomy filter to exclude
             crusts, slime molds, shelf fungi, and lichens.
+        spatial_filter: Optional spatial bounding box filter.
 
     Outputs:
         - photos_cleaned.csv: All photos with parsed species
@@ -452,6 +454,13 @@ def run_preprocessing(
     # Process species columns
     logger.info("Processing species columns...")
     days_df, photos_df = process_species_columns(days_df, photos_df)
+
+    # Apply spatial filter if requested
+    if spatial_filter:
+        from texas_mushrooms.pipeline.filters import filter_by_bbox
+        
+        logger.info(f"Applying spatial filter: {spatial_filter}")
+        photos_df = filter_by_bbox(photos_df, spatial_filter)
 
     # Apply mushroom taxonomy filter if requested
     if filter_species:
@@ -514,7 +523,7 @@ def build_modeling_dataset(
     Build the daily modeling dataset with weather features.
 
     Outputs:
-        - mushroom_daily.csv / .parquet: Daily dataset for modeling
+        - mushroom_daily.csv: Daily dataset for modeling
 
     Returns the DataFrame.
     """
@@ -547,7 +556,6 @@ def build_modeling_dataset(
     dataset = dataset.sort_values("date")
 
     # Save outputs
-    dataset.to_parquet(output_dir / "mushroom_daily.parquet", index=False)
     dataset.to_csv(output_dir / "mushroom_daily.csv", index=False)
 
     logger.info(f"✓ Saved mushroom_daily.csv ({len(dataset)} rows)")
@@ -571,6 +579,7 @@ def run_full_pipeline(
     output_dir: Path,
     filter_years: bool = True,
     filter_species: bool = True,
+    spatial_filter: SpatialFilter | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     Run the complete processing pipeline:
@@ -583,11 +592,16 @@ def run_full_pipeline(
         output_dir: Output directory for processed datasets.
         filter_years: If True, filter to START_YEAR-END_YEAR range.
         filter_species: If True, apply mushroom taxonomy filter.
+        spatial_filter: Optional spatial bounding box filter.
 
     Returns dict of all output DataFrames.
     """
     results = run_preprocessing(
-        raw_dir, output_dir, filter_years=filter_years, filter_species=filter_species
+        raw_dir, 
+        output_dir, 
+        filter_years=filter_years, 
+        filter_species=filter_species,
+        spatial_filter=spatial_filter,
     )
 
     modeling_df = build_modeling_dataset(
@@ -658,4 +672,5 @@ if __name__ == "__main__":
         args.output_dir,
         filter_years=not args.no_filter,
         filter_species=not args.no_filter_species,
+        spatial_filter=None,
     )

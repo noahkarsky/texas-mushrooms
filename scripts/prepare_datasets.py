@@ -70,12 +70,38 @@ def main() -> None:
         action="store_true",
         help="Don't filter by mushroom taxonomy (include crusts, slime molds, etc.)",
     )
+    parser.add_argument(
+        "--bbox",
+        type=float,
+        nargs=4,
+        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
+        help="Override default spatial bounding box (e.g. -95.9 29.9 -94.0 31.2)",
+    )
+    parser.add_argument(
+        "--no-spatial-filter",
+        action="store_true",
+        help="Disable spatial bounding box filtering",
+    )
 
     args = parser.parse_args()
     
     # Handle deprecated --no-filter flag
     filter_years = not (args.no_filter or args.no_filter_years)
     filter_species = not args.no_filter_species
+
+    # Create spatial filter
+    spatial_filter = None
+    if not args.no_spatial_filter:
+        from texas_mushrooms.config.filter_config import SpatialFilter
+        if args.bbox:
+            spatial_filter = SpatialFilter(
+                min_lon=args.bbox[0],
+                min_lat=args.bbox[1],
+                max_lon=args.bbox[2],
+                max_lat=args.bbox[3],
+            )
+        else:
+            spatial_filter = SpatialFilter.default()
 
     logger.info("=" * 60)
     logger.info("TEXAS MUSHROOMS DATA PREPARATION")
@@ -85,6 +111,8 @@ def main() -> None:
     logger.info(f"Output:   {args.output_dir}")
     logger.info(f"Filter years (2018-2024): {filter_years}")
     logger.info(f"Filter species (taxonomy): {filter_species}")
+    if spatial_filter:
+        logger.info(f"Spatial filter: {spatial_filter}")
     logger.info("=" * 60)
 
     # Check inputs exist
@@ -105,6 +133,7 @@ def main() -> None:
         output_dir=args.output_dir,
         filter_years=filter_years,
         filter_species=filter_species,
+        spatial_filter=spatial_filter,
     )
 
     # Summary

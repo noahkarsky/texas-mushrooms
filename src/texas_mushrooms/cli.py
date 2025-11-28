@@ -97,12 +97,8 @@ def main() -> None:
 
         df_photos = pd.DataFrame(photos_data)
 
-        # Save to Parquet
+        # Save to CSV
         logging.info(f"Saving to {out_dir}")
-        df_days.to_parquet(out_dir / "days.parquet", index=False)
-        df_photos.to_parquet(out_dir / "photos.parquet", index=False)
-
-        # Optional CSV
         df_days.to_csv(out_dir / "days.csv", index=False)
         # Photos might have nested data (species), CSV is messy but useful for quick look
         df_photos.to_csv(out_dir / "photos.csv", index=False)

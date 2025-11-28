@@ -205,11 +205,9 @@ def build_and_save_weather_dataset(
 
     _ensure_directory(output_dir)
 
-    parquet_path = output_dir / "daily_weather.parquet"
     csv_path = output_dir / "daily_weather.csv"
 
     print(f"Saving to {output_dir}...")
-    weather_df.to_parquet(parquet_path, index=False)
     weather_df.to_csv(csv_path, index=False)
 
     print("Summary:")

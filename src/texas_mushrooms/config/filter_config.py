@@ -217,3 +217,39 @@ class MushroomFilter:
     
     def __repr__(self) -> str:
         return self.summary()
+
+
+@dataclass
+class SpatialFilter:
+    """Configuration for spatial bounding box filtering.
+    
+    Attributes:
+        min_lon: Minimum longitude (West).
+        min_lat: Minimum latitude (South).
+        max_lon: Maximum longitude (East).
+        max_lat: Maximum latitude (North).
+    """
+    min_lon: float
+    min_lat: float
+    max_lon: float
+    max_lat: float
+    
+    @classmethod
+    def default(cls) -> "SpatialFilter":
+        """Return the default spatial filter for the project."""
+        return cls(
+            min_lon=-95.9,
+            min_lat=29.9,
+            max_lon=-94.0,
+            max_lat=31.2,
+        )
+    
+    def contains(self, lat: float, lon: float) -> bool:
+        """Check if a point is within the bounding box."""
+        return (
+            self.min_lat <= lat <= self.max_lat and
+            self.min_lon <= lon <= self.max_lon
+        )
+        
+    def __repr__(self) -> str:
+        return f"BBox(lon=[{self.min_lon:.4f}, {self.max_lon:.4f}], lat=[{self.min_lat:.4f}, {self.max_lat:.4f}])"

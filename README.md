@@ -5,7 +5,7 @@ A polite web scraper and data pipeline for [texasmushrooms.org](https://www.texa
 ## Features
 
 - **Polite Crawling**: Respects `robots.txt`, uses a custom User-Agent, and implements configurable delays.
-- **Structured Data**: Extracts metadata into Pydantic models and saves as Parquet/CSV.
+- **Structured Data**: Extracts metadata into Pydantic models and saves as CSV.
 - **Image Downloading**: Optionally downloads all mushroom images for offline analysis, art, or modeling.
 - **Clean Architecture**: Built with modern Python (3.11+), typed with `mypy`, and linted with `ruff`.
 - **Geolocation Extraction**: Parses KMZ (KML) files linked from each day page to derive latitude/longitude for the day and, when possible, per-photo coordinates.
@@ -101,7 +101,7 @@ python scripts/run_spatial_analysis.py
 -   `data/raw/photos.csv`: Photo-level metadata (caption, species tags, image URL, per-photo `latitude` / `longitude` when resolvable from KMZ, else the day default).
 -   `data/external/daily_weather.csv`: Daily weather metrics (temperature, precipitation, wind, humidity) from Open-Meteo.
 -   `data/processed/`:
-    -   `mushroom_daily.csv` / `.parquet`: Merged daily dataset with weather features for modeling.
+    -   `mushroom_daily.csv`: Merged daily dataset with weather features for modeling.
     -   `photos_cleaned.csv`: All photos with parsed species lists.
     -   `photo_geospatial.csv`: Photos with lat/lon for mapping.
     -   `species_frequency.csv`: Species occurrence counts.
