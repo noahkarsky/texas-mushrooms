@@ -71,7 +71,13 @@ This infers the date range from `data/raw/days.csv` and saves weather data to `d
 
 ### Process Data
 
-To generate modeling datasets and derived features:
+Run the full processing pipeline to generate cleaned datasets and modeling features:
+
+```bash
+python scripts/prepare_datasets.py
+```
+
+Or run directly as a module:
 
 ```bash
 python -m texas_mushrooms.pipeline.processing
@@ -79,13 +85,55 @@ python -m texas_mushrooms.pipeline.processing
 
 This reads from `data/raw` and `data/external` and outputs to `data/processed`.
 
+**Note:** By default, data is filtered to 2018–2024 (years with best coverage). Use `--no-filter` to include all years.
+
+### Run Spatial Analysis
+
+To run Bayesian modeling with weather and elevation predictors:
+
+```bash
+python scripts/run_spatial_analysis.py
+```
+
 ## Data Output
 
 -   `data/raw/days.csv`: Page-level metadata (date, weather, species list text, KMZ link, `latitude`, `longitude`, `photo_count`).
 -   `data/raw/photos.csv`: Photo-level metadata (caption, species tags, image URL, per-photo `latitude` / `longitude` when resolvable from KMZ, else the day default).
 -   `data/external/daily_weather.csv`: Daily weather metrics (temperature, precipitation, wind, humidity) from Open-Meteo.
--   `data/processed/mushroom_daily.parquet` / `csv`: Merged dataset ready for modeling.
+-   `data/processed/`:
+    -   `mushroom_daily.csv` / `.parquet`: Merged daily dataset with weather features for modeling.
+    -   `photos_cleaned.csv`: All photos with parsed species lists.
+    -   `photo_geospatial.csv`: Photos with lat/lon for mapping.
+    -   `species_frequency.csv`: Species occurrence counts.
 -   `data/raw/images/`: Directory containing downloaded images organized by date.
+
+## Project Structure
+
+```
+texas-mushrooms/
+├── data/
+│   ├── raw/              # Scraped data (days.csv, photos.csv, images/)
+│   ├── external/         # Weather data from Open-Meteo
+│   └── processed/        # Cleaned & feature-engineered datasets
+├── notebooks/
+│   ├── EDA.ipynb         # Exploratory data analysis
+│   └── spatial_analysis.ipynb
+├── scripts/
+│   ├── prepare_datasets.py   # Main data processing script (renamed)
+│   └── run_spatial_analysis.py  # Bayesian modeling script
+├── src/texas_mushrooms/
+│   ├── cli.py            # Command-line interface
+│   ├── scrape/           # Web scraping logic
+│   │   ├── core.py
+│   │   └── schemas.py
+│   ├── pipeline/         # Data processing modules
+│   │   ├── processing.py
+│   │   ├── weather.py
+│   │   └── spatial.py
+│   └── modeling/
+│       └── bayesian.py   # PyMC models
+└── tests/
+```
 
 ### Geolocation Details
 
@@ -120,36 +168,4 @@ Run linter:
 
 ```bash
 ruff check src
-```
-
-```
-texas-mushrooms
-├─ .pre-commit-config.yaml
-├─ LICENSE
-├─ notebooks
-│  ├─ EDA.ipynb
-│  └─ pre-process-data.py
-├─ poetry.lock
-├─ pyproject.toml
-├─ README.md
-├─ src
-│  ├─ modeling
-│  └─ texas_mushrooms
-│     ├─ art
-│     │  └─ __init__.py
-│     ├─ cli.py
-│     ├─ modeling
-│     │  └─ __init__.py
-│     ├─ pipeline
-│     │  ├─ processing.py
-│     │  ├─ weather.py
-│     │  └─ __init__.py
-│     ├─ scrape
-│     │  ├─ core.py
-│     │  ├─ schemas.py
-│     │  └─ __init__.py
-│     └─ __init__.py
-└─ tests
-   └─ test_scraper.py
-
 ```

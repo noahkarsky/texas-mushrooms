@@ -1,0 +1,209 @@
+# Mushroom Filter Configuration
+# Filters observations to "cool" stalked mushrooms, excluding crusts, slime molds, 
+# shelf fungi (except boletes), and lichens.
+#
+# Strategy: Genus-level blacklist with explicit overrides.
+# Note: Boletes are NOT polypores taxonomically - they're in Boletales, not Polyporales.
+#       So we specifically exclude Trametes-like shelf fungi, not all "polypores".
+
+filter:
+  # Morphological groups to exclude (used for documentation/grouping below)
+  exclude_groups:
+    - shelf_fungi      # Bracket/shelf fungi like Trametes (Order Polyporales)
+    - crusts           # Resupinate/crust fungi
+    - slime_molds      # Myxomycota - not true fungi
+    - lichens          # Lichenized fungi - symbiotic, not typical mushrooms
+
+  # ---------------------------------------------------------
+  # GENERA BLACKLIST
+  # These genera are excluded by default
+  # ---------------------------------------------------------
+  exclude_genera:
+    # --- Shelf/Bracket Fungi (Polyporales) ---
+    - Trametes          # Turkey tail, etc. - classic shelf fungus
+    - Trichaptum        # Violet-toothed polypore
+    - Daedaleopsis      # Thin-maze flat polypore
+    - Lenzites          # Birch mazegill
+    - Pycnoporus        # Cinnabar polypore
+    - Fomes             # Tinder fungus
+    - Fomitopsis        # Red-belted conk
+    - Phellinus         # False tinder fungus
+    - Inonotus          # Shaggy bracket
+    - Cerrena           # Mossy maze polypore
+    - Bjerkandera       # Smoky bracket
+    - Postia            # Cheese polypore
+    - Irpex             # Tooth fungus
+    - Daedalea          # Oak mazegill
+    - Perenniporia      # Perennial polypore
+    - Hexagonia         # Hexagonal-pored polypore
+    - Earliella         # Bracket fungus
+    - Nigroporus        # Dark-pored bracket
+    
+    # --- Crust/Resupinate Fungi ---
+    - Stereum           # Parchment fungi
+    - Xylodon           # Crust fungi
+    - Peniophora        # Crust fungi
+    - Phlebia           # Crust fungi
+    - Fibroporia        # Root rot crust
+    - Terana            # Cobalt crust (even though pretty!)
+    - Hymenochaete      # Crust fungi
+    - Cylindrobasidium  # Crust fungi
+    - Byssomerulius     # Crust fungi
+    - Gloeoporus        # Crust/resupinate
+    - Schizopora        # Crust fungi
+    - Steccherinum      # Crust/tooth fungi
+    - Radulomyces       # Crust fungi
+    
+    # --- Slime Molds (Myxomycota) ---
+    - Fuligo            # Dog vomit slime mold
+    - Lycogala          # Wolf's milk
+    - Ceratiomyxa       # Coral slime
+    - Stemonitis        # Chocolate tube slime
+    - Arcyria           # Carnival candy slime
+    - Tubifera          # Red raspberry slime
+    - Physarum          # Many-headed slime
+    - Hemitrichia       # Slime mold
+    - Trichia           # Slime mold
+    - Reticularia       # False puffball slime
+    - Enteridium        # Slime mold
+    - Badhamia          # Slime mold
+    - Didymium          # Slime mold
+    - Lamproderma       # Slime mold
+    - Cribraria         # Slime mold
+    - Metatrichia       # Slime mold
+    
+    # --- Lichens ---
+    - Xanthoparmelia    # Shield lichens
+    - Heterodermia      # Fringe lichens
+    - Flavoparmelia     # Green shield lichen
+    - Punctelia         # Speckled shield lichen
+    - Physcia           # Rosette lichens
+    - Parmotrema        # Ruffle lichens
+    - Cladonia          # Pixie cup lichens
+    - Usnea             # Old man's beard
+    - Ramalina          # Strap lichens
+    - Candelaria        # Candleflame lichens
+    - Teloschistes      # Orange lichen
+
+  # ---------------------------------------------------------
+  # SPECIES BLACKLIST
+  # Specific species to exclude (edge cases)
+  # ---------------------------------------------------------
+  exclude_species:
+
+  # ---------------------------------------------------------
+  # SPECIES WHITELIST (overrides genus exclusion)
+  # Include these even if their genus is excluded
+  # ---------------------------------------------------------
+  include_species:
+    - "Ganoderma lucidum"     # Reishi - medicinal, interesting
+    - "Ganoderma curtisii"    # Similar to lucidum
+    - "Ganoderma sessile"     # Reishi-like, sessile shelf fungus
+    - "Ganoderma applanatum"  # Artist's conk
+    - "Laetiporus sulphureus" # Chicken of the woods - shelf fungus (debatable!)
+    - "Laetiporus cincinnatus"
+    # Add any exceptions here
+
+  # ---------------------------------------------------------
+  # CAPTION KEYWORDS
+  # Exclude if caption contains these (case-insensitive)
+  # ---------------------------------------------------------
+  exclude_caption_keywords:
+    - "resupinate"
+    - "crust fungus"
+    - "crust on"
+    - "bracket fungus"
+    - "shelf fungus"
+    # - "polypore on log"
+    - "lichen"
+    - "slime mold"
+    - "slime mould"
+    - "myxomycete"
+
+# ---------------------------------------------------------
+# TAXONOMY REFERENCE
+# Mapping of groups to genera (for documentation and potential expansion)
+# Note: This section is not used programmatically yet, just for reference
+# ---------------------------------------------------------
+taxonomy_reference:
+  # "Cool" mushrooms - gilled, boletes, chanterelles, puffballs with stalks
+  agarics:  # Gilled mushrooms
+    - Amanita
+    - Russula
+    - Lactarius
+    - Agaricus
+    - Lepiota
+    - Macrolepiota
+    - Coprinus
+    - Coprinellus
+    - Coprinopsis
+    - Pluteus
+    - Volvariella
+    - Entoloma
+    - Hygrocybe
+    - Hygrophorus
+    - Tricholoma
+    - Clitocybe
+    - Armillaria
+    - Desarmillaria
+    - Gymnopus
+    - Marasmius
+    - Mycena
+    - Pholiota
+    - Stropharia
+    - Agrocybe
+    - Psathyrella
+    - Panaeolus
+    - Psilocybe
+    - Cortinarius
+    - Inocybe
+    - Hebeloma
+    
+  boletes:  # Pored mushrooms with stalks - GOOD!
+    - Boletus
+    - Tylopilus
+    - Leccinum
+    - Suillus
+    - Xerocomus
+    - Xerocomellus
+    - Aureoboletus
+    - Butyriboletus
+    - Caloboletus
+    - Chalciporus
+    - Hortiboletus
+    - Neoboletus
+    - Pulchroboletus
+    - Retiboletus
+    - Strobilomyces
+    - Austroboletus
+    - Phylloporus
+    - Boletellus
+    - Heimioporus
+    
+  chanterelles:
+    - Cantharellus
+    - Craterellus
+    - Polyozellus
+    
+  tooth_fungi_stalked:  # Stalked tooth fungi - interesting!
+    - Hydnum
+    - Sarcodon
+    - Hericium
+    - Phellodon
+    
+  clubs_and_corals:  # Interesting morphology
+    - Clavaria
+    - Clavulinopsis
+    - Clavulina
+    - Ramaria
+    - Ramariopsis
+    
+  puffballs_stalked:
+    - Lycoperdon
+    - Calvatia
+    - Bovista
+    - Scleroderma
+    - Pisolithus
+    - Phallus       # Stinkhorns
+    - Mutinus
+    - Clathrus

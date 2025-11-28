@@ -4,8 +4,9 @@ Data processing pipeline for Texas Mushrooms.
 This module provides functions to:
 1. Load and clean raw scraped data (days.csv, photos.csv)
 2. Parse species lists and extract metadata
-3. Build modeling datasets with weather features
-4. Export processed artifacts
+3. Filter observations by mushroom taxonomy (exclude crusts, slime molds, etc.)
+4. Build modeling datasets with weather features
+5. Export processed artifacts
 
 Usage:
     python -m texas_mushrooms.pipeline.processing
@@ -18,10 +19,13 @@ import logging
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from texas_mushrooms.config.filter_config import MushroomFilter
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +201,99 @@ def build_species_frequency(
 
 
 # =============================================================================
+# Taxonomy Filtering
+# =============================================================================
+
+
+def filter_photos_by_taxonomy(
+    photos_df: pd.DataFrame,
+    mushroom_filter: MushroomFilter,
+    species_col: str = "first_species",
+    caption_col: str | None = "full_caption",
+) -> pd.DataFrame:
+    """
+    Filter photos DataFrame based on mushroom taxonomy configuration.
+    
+    Excludes observations of crusts, slime molds, shelf fungi (like Trametes),
+    and lichens while keeping interesting stalked mushrooms like boletes.
+    
+    Args:
+        photos_df: DataFrame with photo records.
+        mushroom_filter: MushroomFilter configuration loaded from YAML.
+        species_col: Column containing the primary species name.
+        caption_col: Column containing caption text (optional, set to None to skip).
+        
+    Returns:
+        Filtered DataFrame with only "cool" mushrooms.
+    """
+    if species_col not in photos_df.columns:
+        logger.warning(f"Species column '{species_col}' not found, returning all rows")
+        return photos_df.copy()
+    
+    def check_row(row: pd.Series) -> bool:
+        species = row.get(species_col, "")
+        caption = row.get(caption_col, "") if caption_col else ""
+        return mushroom_filter.should_include(
+            species_name=species if isinstance(species, str) else "",
+            caption=caption if isinstance(caption, str) else "",
+        )
+    
+    mask = photos_df.apply(check_row, axis=1)
+    filtered_df = photos_df[mask].copy()
+    
+    n_removed = len(photos_df) - len(filtered_df)
+    logger.info(
+        f"Taxonomy filter: {len(filtered_df)} photos retained, "
+        f"{n_removed} excluded ({n_removed / len(photos_df):.1%})"
+    )
+    
+    return filtered_df
+
+
+def get_exclusion_stats(
+    photos_df: pd.DataFrame,
+    mushroom_filter: MushroomFilter,
+    species_col: str = "first_species",
+    caption_col: str | None = "full_caption",
+) -> pd.DataFrame:
+    """
+    Get statistics on which species/genera are being excluded and why.
+    
+    Args:
+        photos_df: DataFrame with photo records.
+        mushroom_filter: MushroomFilter configuration.
+        species_col: Column containing the primary species name.
+        caption_col: Column containing caption text (optional).
+        
+    Returns:
+        DataFrame with columns: species, count, exclusion_reason
+    """
+    if species_col not in photos_df.columns:
+        return pd.DataFrame(columns=["species", "count", "exclusion_reason"])
+    
+    exclusion_data: list[dict[str, Any]] = []
+    
+    for species, group in photos_df.groupby(species_col):
+        if not isinstance(species, str):
+            continue
+        caption = ""
+        if caption_col and caption_col in group.columns:
+            # Use first non-empty caption as sample
+            captions = group[caption_col].dropna()
+            caption = captions.iloc[0] if len(captions) > 0 else ""
+        
+        reason = mushroom_filter.get_exclusion_reason(species, caption)
+        if reason:
+            exclusion_data.append({
+                "species": species,
+                "count": len(group),
+                "exclusion_reason": reason,
+            })
+    
+    return pd.DataFrame(exclusion_data).sort_values("count", ascending=False)
+
+
+# =============================================================================
 # Photo Exports
 # =============================================================================
 
@@ -243,12 +340,14 @@ def build_calendar_from_weather(weather_df: pd.DataFrame) -> pd.DataFrame:
 def attach_mushroom_presence(
     calendar: pd.DataFrame,
     days_df: pd.DataFrame,
+    photos_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Add has_mushroom and photo_count columns to the calendar.
+    Add has_mushroom, photo_count, and species_count columns to the calendar.
 
     - has_mushroom: 1 if date appears in days_df, else 0
     - photo_count: number of photos that day, or 0 if none
+    - species_count: number of unique species identified that day
     """
     mushroom_dates = days_df[["date"]].drop_duplicates()
     mushroom_dates["has_mushroom"] = 1
@@ -262,6 +361,20 @@ def attach_mushroom_presence(
         out["photo_count"] = out["photo_count"].fillna(0).astype(int)
     else:
         out["photo_count"] = 0
+
+    # Calculate unique species count per day from photos
+    if photos_df is not None and "species_list" in photos_df.columns:
+        species_by_day = (
+            photos_df.explode("species_list")
+            .dropna(subset=["species_list"])
+            .groupby("date")["species_list"]
+            .nunique()
+            .reset_index(name="species_count")
+        )
+        out = out.merge(species_by_day, on="date", how="left")
+        out["species_count"] = out["species_count"].fillna(0).astype(int)
+    else:
+        out["species_count"] = 0
 
     return out
 
@@ -305,9 +418,17 @@ def run_preprocessing(
     raw_dir: Path,
     output_dir: Path,
     filter_years: bool = True,
+    filter_species: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """
     Run the full preprocessing pipeline on raw scraped data.
+
+    Args:
+        raw_dir: Directory containing raw days.csv and photos.csv.
+        output_dir: Output directory for processed datasets.
+        filter_years: If True, filter to START_YEAR-END_YEAR range.
+        filter_species: If True, apply mushroom taxonomy filter to exclude
+            crusts, slime molds, shelf fungi, and lichens.
 
     Outputs:
         - photos_cleaned.csv: All photos with parsed species
@@ -331,6 +452,27 @@ def run_preprocessing(
     # Process species columns
     logger.info("Processing species columns...")
     days_df, photos_df = process_species_columns(days_df, photos_df)
+
+    # Apply mushroom taxonomy filter if requested
+    if filter_species:
+        try:
+            from texas_mushrooms.config.filter_config import MushroomFilter
+            mushroom_filter = MushroomFilter.from_yaml()
+            logger.info(f"Applying mushroom taxonomy filter: {mushroom_filter.summary()}")
+            
+            # Log what will be excluded before filtering
+            exclusion_stats = get_exclusion_stats(photos_df, mushroom_filter)
+            if not exclusion_stats.empty:
+                logger.info(f"Top excluded genera/species:")
+                for _, row in exclusion_stats.head(10).iterrows():
+                    logger.info(f"  {row['species']}: {row['count']} photos ({row['exclusion_reason']})")
+            
+            photos_df = filter_photos_by_taxonomy(photos_df, mushroom_filter)
+        except FileNotFoundError as e:
+            logger.warning(f"Could not load mushroom filter config: {e}")
+            logger.warning("Proceeding without species filter")
+    else:
+        logger.info("Skipping mushroom taxonomy filter (--no-filter-species)")
 
     # Build and export photos_cleaned
     photos_cleaned = build_photos_cleaned(photos_df)
@@ -366,6 +508,7 @@ def build_modeling_dataset(
     weather_csv: Path,
     output_dir: Path,
     filter_years: bool = True,
+    photos_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Build the daily modeling dataset with weather features.
@@ -384,6 +527,13 @@ def build_modeling_dataset(
     days_df = load_days(days_csv, filter_years=filter_years)
     weather_df = load_daily_weather(weather_csv)
 
+    # Load photos if not provided (needed for species_count)
+    if photos_df is None:
+        photos_csv = days_csv.parent / "photos.csv"
+        if photos_csv.exists():
+            photos_df = load_photos(photos_csv, filter_years=filter_years)
+            _, photos_df = process_species_columns(days_df, photos_df)
+
     # Filter weather to same date range
     if filter_years:
         weather_df = weather_df[
@@ -392,7 +542,7 @@ def build_modeling_dataset(
         ].copy()
 
     calendar = build_calendar_from_weather(weather_df)
-    base = attach_mushroom_presence(calendar, days_df)
+    base = attach_mushroom_presence(calendar, days_df, photos_df)
     dataset = add_weather_features(base, weather_df)
     dataset = dataset.sort_values("date")
 
@@ -408,6 +558,9 @@ def build_modeling_dataset(
         f"  Mushroom days: {dataset['has_mushroom'].sum()} "
         f"({dataset['has_mushroom'].mean():.1%})"
     )
+    logger.info(
+        f"  Total species observations: {dataset['species_count'].sum()}"
+    )
 
     return dataset
 
@@ -417,21 +570,32 @@ def run_full_pipeline(
     weather_csv: Path,
     output_dir: Path,
     filter_years: bool = True,
+    filter_species: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """
     Run the complete processing pipeline:
     1. Preprocess raw data (photos, species)
     2. Build modeling dataset (weather features)
 
+    Args:
+        raw_dir: Directory containing raw days.csv and photos.csv.
+        weather_csv: Path to daily_weather.csv.
+        output_dir: Output directory for processed datasets.
+        filter_years: If True, filter to START_YEAR-END_YEAR range.
+        filter_species: If True, apply mushroom taxonomy filter.
+
     Returns dict of all output DataFrames.
     """
-    results = run_preprocessing(raw_dir, output_dir, filter_years=filter_years)
+    results = run_preprocessing(
+        raw_dir, output_dir, filter_years=filter_years, filter_species=filter_species
+    )
 
     modeling_df = build_modeling_dataset(
         raw_dir / "days.csv",
         weather_csv,
         output_dir,
         filter_years=filter_years,
+        photos_df=results.get("photos"),
     )
     results["mushroom_daily"] = modeling_df
 
@@ -480,6 +644,11 @@ if __name__ == "__main__":
         action="store_true",
         help=f"Don't filter to {START_YEAR}-{END_YEAR} (use all years)",
     )
+    parser.add_argument(
+        "--no-filter-species",
+        action="store_true",
+        help="Don't filter by mushroom taxonomy (include all species)",
+    )
 
     args = parser.parse_args()
 
@@ -488,4 +657,5 @@ if __name__ == "__main__":
         args.weather_csv,
         args.output_dir,
         filter_years=not args.no_filter,
+        filter_species=not args.no_filter_species,
     )
