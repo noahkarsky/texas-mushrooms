@@ -238,20 +238,35 @@ def fetch_elevation_batch(
     """
     url = "https://api.open-meteo.com/v1/elevation"
 
-    # Open-Meteo accepts comma-separated lists
-    params = {
-        "latitude": ",".join(map(str, latitudes)),
-        "longitude": ",".join(map(str, longitudes)),
-    }
+    # Protect against mismatched input lengths
+    if len(latitudes) != len(longitudes):
+        raise ValueError("latitudes and longitudes must have the same length")
 
-    try:
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("elevation", [None] * len(latitudes))  # type: ignore
-    except requests.RequestException as e:
-        print(f"Warning: Failed to fetch elevation: {e}")
-        return [None] * len(latitudes)
+    # Open-Meteo accepts comma-separated lists, but very large requests may fail or hit URL limits.
+    # Chunk the coordinates into smaller batches for reliability.
+    results: list[float | None] = []
+    chunk_size = 500
+    for i in range(0, len(latitudes), chunk_size):
+        lats_chunk = latitudes[i : i + chunk_size]
+        lons_chunk = longitudes[i : i + chunk_size]
+
+        params = {
+            "latitude": ",".join(map(str, lats_chunk)),
+            "longitude": ",".join(map(str, lons_chunk)),
+        }
+
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            chunk_elev = data.get("elevation", [None] * len(lats_chunk))  # type: ignore
+        except requests.RequestException as e:
+            print(f"Warning: Failed to fetch elevation for chunk starting at {i}: {e}")
+            chunk_elev = [None] * len(lats_chunk)
+
+        results.extend(chunk_elev)
+
+    return results
 
 
 if __name__ == "__main__":

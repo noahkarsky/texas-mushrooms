@@ -39,22 +39,28 @@ def add_h3_indices(
 
     # Apply H3 indexing
     # Note: h3-py v4 changed geo_to_h3 to latlng_to_cell
-    try:
-        # Try v4 API first
-        df["h3_index"] = df.apply(
-            lambda row: h3.latlng_to_cell(row[lat_col], row[lon_col], resolution)
-            if pd.notna(row[lat_col]) and pd.notna(row[lon_col])
-            else None,
-            axis=1,
-        )
-    except AttributeError:
-        # Fallback to v3 API
-        df["h3_index"] = df.apply(
-            lambda row: h3.geo_to_h3(row[lat_col], row[lon_col], resolution)
-            if pd.notna(row[lat_col]) and pd.notna(row[lon_col])
-            else None,
-            axis=1,
-        )
+    lat_vals = valid_coords[lat_col].to_numpy()
+    lon_vals = valid_coords[lon_col].to_numpy()
+
+    h3_list = []
+    # Prefer v4 API if available; fall back to older API
+    if hasattr(h3, "latlng_to_cell"):
+        latlng_to_cell = h3.latlng_to_cell
+        for lat, lon in zip(lat_vals, lon_vals):
+            if pd.isna(lat) or pd.isna(lon):
+                h3_list.append(None)
+            else:
+                h3_list.append(latlng_to_cell(float(lat), float(lon), resolution))
+    else:
+        for lat, lon in zip(lat_vals, lon_vals):
+            if pd.isna(lat) or pd.isna(lon):
+                h3_list.append(None)
+            else:
+                h3_list.append(h3.geo_to_h3(float(lat), float(lon), resolution))
+
+    # Build a series aligned with valid_coords and then reindex to original DF
+    h3_series = pd.Series(h3_list, index=valid_coords.index)
+    df["h3_index"] = h3_series.reindex(df.index)
 
     return df
 
