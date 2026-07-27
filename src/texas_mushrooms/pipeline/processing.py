@@ -213,23 +213,23 @@ def filter_photos_by_taxonomy(
 ) -> pd.DataFrame:
     """
     Filter photos DataFrame based on mushroom taxonomy configuration.
-    
+
     Excludes observations of crusts, slime molds, shelf fungi (like Trametes),
     and lichens while keeping interesting stalked mushrooms like boletes.
-    
+
     Args:
         photos_df: DataFrame with photo records.
         mushroom_filter: MushroomFilter configuration loaded from YAML.
         species_col: Column containing the primary species name.
         caption_col: Column containing caption text (optional, set to None to skip).
-        
+
     Returns:
         Filtered DataFrame with only "cool" mushrooms.
     """
     if species_col not in photos_df.columns:
         logger.warning(f"Species column '{species_col}' not found, returning all rows")
         return photos_df.copy()
-    
+
     def check_row(row: pd.Series) -> bool:
         species = row.get(species_col, "")
         caption = row.get(caption_col, "") if caption_col else ""
@@ -237,16 +237,16 @@ def filter_photos_by_taxonomy(
             species_name=species if isinstance(species, str) else "",
             caption=caption if isinstance(caption, str) else "",
         )
-    
+
     mask = photos_df.apply(check_row, axis=1)
     filtered_df = photos_df[mask].copy()
-    
+
     n_removed = len(photos_df) - len(filtered_df)
     logger.info(
         f"Taxonomy filter: {len(filtered_df)} photos retained, "
         f"{n_removed} excluded ({n_removed / len(photos_df):.1%})"
     )
-    
+
     return filtered_df
 
 
@@ -258,21 +258,21 @@ def get_exclusion_stats(
 ) -> pd.DataFrame:
     """
     Get statistics on which species/genera are being excluded and why.
-    
+
     Args:
         photos_df: DataFrame with photo records.
         mushroom_filter: MushroomFilter configuration.
         species_col: Column containing the primary species name.
         caption_col: Column containing caption text (optional).
-        
+
     Returns:
         DataFrame with columns: species, count, exclusion_reason
     """
     if species_col not in photos_df.columns:
         return pd.DataFrame(columns=["species", "count", "exclusion_reason"])
-    
+
     exclusion_data: list[dict[str, Any]] = []
-    
+
     for species, group in photos_df.groupby(species_col):
         if not isinstance(species, str):
             continue
@@ -281,15 +281,17 @@ def get_exclusion_stats(
             # Use first non-empty caption as sample
             captions = group[caption_col].dropna()
             caption = captions.iloc[0] if len(captions) > 0 else ""
-        
+
         reason = mushroom_filter.get_exclusion_reason(species, caption)
         if reason:
-            exclusion_data.append({
-                "species": species,
-                "count": len(group),
-                "exclusion_reason": reason,
-            })
-    
+            exclusion_data.append(
+                {
+                    "species": species,
+                    "count": len(group),
+                    "exclusion_reason": reason,
+                }
+            )
+
     return pd.DataFrame(exclusion_data).sort_values("count", ascending=False)
 
 
@@ -458,7 +460,7 @@ def run_preprocessing(
     # Apply spatial filter if requested
     if spatial_filter:
         from texas_mushrooms.pipeline.filters import filter_by_bbox
-        
+
         logger.info(f"Applying spatial filter: {spatial_filter}")
         photos_df = filter_by_bbox(photos_df, spatial_filter)
 
@@ -466,16 +468,21 @@ def run_preprocessing(
     if filter_species:
         try:
             from texas_mushrooms.config.filter_config import MushroomFilter
+
             mushroom_filter = MushroomFilter.from_yaml()
-            logger.info(f"Applying mushroom taxonomy filter: {mushroom_filter.summary()}")
-            
+            logger.info(
+                f"Applying mushroom taxonomy filter: {mushroom_filter.summary()}"
+            )
+
             # Log what will be excluded before filtering
             exclusion_stats = get_exclusion_stats(photos_df, mushroom_filter)
             if not exclusion_stats.empty:
-                logger.info(f"Top excluded genera/species:")
+                logger.info("Top excluded genera/species:")
                 for _, row in exclusion_stats.head(10).iterrows():
-                    logger.info(f"  {row['species']}: {row['count']} photos ({row['exclusion_reason']})")
-            
+                    logger.info(
+                        f"  {row['species']}: {row['count']} photos ({row['exclusion_reason']})"
+                    )
+
             photos_df = filter_photos_by_taxonomy(photos_df, mushroom_filter)
         except FileNotFoundError as e:
             logger.warning(f"Could not load mushroom filter config: {e}")
@@ -566,9 +573,7 @@ def build_modeling_dataset(
         f"  Mushroom days: {dataset['has_mushroom'].sum()} "
         f"({dataset['has_mushroom'].mean():.1%})"
     )
-    logger.info(
-        f"  Total species observations: {dataset['species_count'].sum()}"
-    )
+    logger.info(f"  Total species observations: {dataset['species_count'].sum()}")
 
     return dataset
 
@@ -597,9 +602,9 @@ def run_full_pipeline(
     Returns dict of all output DataFrames.
     """
     results = run_preprocessing(
-        raw_dir, 
-        output_dir, 
-        filter_years=filter_years, 
+        raw_dir,
+        output_dir,
+        filter_years=filter_years,
         filter_species=filter_species,
         spatial_filter=spatial_filter,
     )

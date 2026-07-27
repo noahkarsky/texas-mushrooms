@@ -42,7 +42,7 @@ def add_h3_indices(
     lat_vals = valid_coords[lat_col].to_numpy()
     lon_vals = valid_coords[lon_col].to_numpy()
 
-    h3_list = []
+    h3_list: list[str | None] = []
     # Prefer v4 API if available; fall back to older API
     if hasattr(h3, "latlng_to_cell"):
         latlng_to_cell = h3.latlng_to_cell

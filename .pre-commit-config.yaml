@@ -19,4 +19,11 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-beautifulsoup4, pydantic, pandas]
+        additional_dependencies:
+          [
+            types-requests,
+            types-beautifulsoup4,
+            types-PyYAML,
+            pandas,
+            pytest,
+          ]

@@ -84,7 +84,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    
+
     # Handle deprecated --no-filter flag
     filter_years = not (args.no_filter or args.no_filter_years)
     filter_species = not args.no_filter_species
@@ -93,6 +93,7 @@ def main() -> None:
     spatial_filter = None
     if not args.no_spatial_filter:
         from texas_mushrooms.config.filter_config import SpatialFilter
+
         if args.bbox:
             spatial_filter = SpatialFilter(
                 min_lon=args.bbox[0],

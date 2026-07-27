@@ -31,18 +31,20 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 def main() -> None:
     """Run spatial and weather analysis on mushroom observations."""
     logger.info("Starting spatial analysis pipeline")
-    
+
     # Set plot style
     sns.set_theme(style="whitegrid")
 
     # =========================================================================
     # Option A: Weather-focused model (daily counts with weather predictors)
     # =========================================================================
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("Running weather-enriched Bayesian model")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
-    daily_path = Path(__file__).resolve().parent.parent / "data/processed/mushroom_daily.csv"
+    daily_path = (
+        Path(__file__).resolve().parent.parent / "data/processed/mushroom_daily.csv"
+    )
     if daily_path.exists():
         try:
             run_weather_model(daily_path)
@@ -55,30 +57,30 @@ def main() -> None:
     # =========================================================================
     # Option B: Spatial model (elevation only, as before)
     # =========================================================================
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("Running spatial model (elevation)")
-    logger.info("="*60)
-    
+    logger.info("=" * 60)
+
     try:
         run_spatial_model()
     except Exception as e:
         logger.error(f"Spatial model failed: {e}", exc_info=True)
-    
+
     logger.info("Spatial analysis pipeline complete")
 
 
 def run_weather_model(daily_path: Path) -> None:
     """Run a ZIP model with weather predictors on daily mushroom counts.
-    
+
     Args:
         daily_path: Path to mushroom_daily.csv with weather-enriched data.
-        
+
     Raises:
         FileNotFoundError: If data file doesn't exist.
         ValueError: If required columns are missing.
     """
     logger.info("Step 1: Load weather-enriched daily data")
-    
+
     try:
         df = pd.read_csv(daily_path, parse_dates=["date"])
         logger.info(f"Loaded {len(df)} rows from {daily_path}")
@@ -88,10 +90,10 @@ def run_weather_model(daily_path: Path) -> None:
     except pd.errors.ParserError as e:
         logger.error(f"Failed to parse CSV: {e}")
         raise
-    
+
     # Note: mushroom_daily.csv is aggregated by date, so no species column to filter
     # Mushroom filtering is applied only to raw photo-level data
-    
+
     # Filter to best coverage years
     df = filter_by_year(df, date_col="date", start_year=START_YEAR, end_year=END_YEAR)
     logger.info(f"Date range: {df['date'].min().date()} to {df['date'].max().date()}")
@@ -111,14 +113,16 @@ def run_weather_model(daily_path: Path) -> None:
         "seasonal_sin",
         "seasonal_cos",
     ]
-    
+
     missing_cols = [c for c in weather_cols + [target_col] if c not in df.columns]
     if missing_cols:
         logger.warning(f"Missing columns: {missing_cols}")
-    
+
     df_model = df.dropna(subset=weather_cols + [target_col])
     excluded_rows = len(df) - len(df_model)
-    logger.info(f"Complete weather data: {len(df_model)} rows ({excluded_rows} excluded due to missing values)")
+    logger.info(
+        f"Complete weather data: {len(df_model)} rows ({excluded_rows} excluded due to missing values)"
+    )
 
     logger.info("Step 2: Standardize predictors")
     # Standardize numeric predictors for better MCMC sampling
@@ -134,7 +138,10 @@ def run_weather_model(daily_path: Path) -> None:
         logger.debug(f"Standardized {col} -> {std_col}")
 
     # Seasonality features are already scaled [-1, 1], keep as-is
-    predictor_cols = [f"{c}_std" for c in predictors_to_std] + ["seasonal_sin", "seasonal_cos"]
+    predictor_cols = [f"{c}_std" for c in predictors_to_std] + [
+        "seasonal_sin",
+        "seasonal_cos",
+    ]
     logger.info(f"Predictor columns: {predictor_cols}")
 
     logger.info("Step 3: Build and sample ZIP model")
@@ -146,13 +153,17 @@ def run_weather_model(daily_path: Path) -> None:
     model.sample(draws=500, tune=500, chains=2, cores=1)
     logger.info("Sampling complete")
 
+    trace = model.trace
+    if trace is None:
+        raise RuntimeError("Sampling finished without producing a trace")
+
     logger.info("Step 4: Extract and visualize results")
 
     # Print numeric summary
     summary = az.summary(model.trace, var_names=["alpha", "betas", "psi"], round_to=3)
     summary.to_csv(OUTPUT_DIR / "weather_model_summary.csv")
     logger.info(f"Model summary saved to {OUTPUT_DIR / 'weather_model_summary.csv'}")
-    
+
     logger.info("Posterior Summary:")
     for line in str(summary).split("\n"):
         logger.info(line)
@@ -165,42 +176,51 @@ def run_weather_model(daily_path: Path) -> None:
     # Create labeled trace plot
     logger.info("Plotting trace...")
     fig, axes = plt.subplots(3, 2, figsize=(12, 10))
-    
+
     var_labels = {
         "alpha": "α (Intercept)",
-        "betas": "β (Weather Effects)", 
-        "psi": "ψ (Zero-Inflation Prob)"
+        "betas": "β (Weather Effects)",
+        "psi": "ψ (Zero-Inflation Prob)",
     }
-    
+
     for i, var in enumerate(["alpha", "betas", "psi"]):
         # Posterior Plot (Left)
         ax_post = axes[i, 0]
-        
+
         # Handle betas specially if multidimensional
         is_multidim_beta = False
         if var == "betas":
-            data = model.trace.posterior[var].values
+            data = trace.posterior[var].values
             if data.ndim == 3 and data.shape[2] > 1:
                 is_multidim_beta = True
                 # Flatten chains and draws
                 flat_data = data.reshape(-1, data.shape[-1])
                 for idx in range(flat_data.shape[1]):
-                    label = predictor_cols[idx] if idx < len(predictor_cols) else f"beta_{idx}"
+                    label = (
+                        predictor_cols[idx]
+                        if idx < len(predictor_cols)
+                        else f"beta_{idx}"
+                    )
                     sns.kdeplot(flat_data[:, idx], ax=ax_post, label=label)
-                ax_post.legend(fontsize='x-small')
-        
+                ax_post.legend(fontsize="x-small")
+
         if not is_multidim_beta:
-            az.plot_posterior(model.trace, var_names=[var], ax=ax_post, 
-                             hdi_prob=0.94, point_estimate="mean")
-            
+            az.plot_posterior(
+                model.trace,
+                var_names=[var],
+                ax=ax_post,
+                hdi_prob=0.94,
+                point_estimate="mean",
+            )
+
         ax_post.set_title(f"{var_labels[var]} - Posterior", fontsize=11)
         ax_post.set_xlabel("Parameter Value")
         ax_post.set_ylabel("Density")
-        
+
         # Trace Plot (Right) - Manual to avoid ArviZ shape errors
         ax_trace = axes[i, 1]
-        data = model.trace.posterior[var].values
-        
+        data = trace.posterior[var].values
+
         if data.ndim == 2:
             for chain_idx in range(data.shape[0]):
                 ax_trace.plot(data[chain_idx], alpha=0.5)
@@ -212,14 +232,18 @@ def run_weather_model(daily_path: Path) -> None:
         ax_trace.set_title(f"{var_labels[var]} - MCMC Trace", fontsize=11)
         ax_trace.set_xlabel("Sample")
         ax_trace.set_ylabel("Parameter Value")
-    
-    plt.suptitle("Weather-Enriched ZIP Model\n(Mushroom Count ~ Rain + Soil Moisture + Temp + Humidity + Seasonality)", 
-                 fontsize=13, fontweight='bold', y=1.02)
+
+    plt.suptitle(
+        "Weather-Enriched ZIP Model\n(Mushroom Count ~ Rain + Soil Moisture + Temp + Humidity + Seasonality)",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     plt.tight_layout()
-    
+
     fig.savefig(OUTPUT_DIR / "weather_model_trace.png", dpi=150, bbox_inches="tight")
     logger.info(f"Trace plot saved to {OUTPUT_DIR / 'weather_model_trace.png'}")
-    
+
     # Print interpretation
     logger.info("Beta coefficient interpretation:")
     for i, name in enumerate(predictor_cols):
@@ -228,17 +252,17 @@ def run_weather_model(daily_path: Path) -> None:
 
 def run_spatial_model() -> None:
     """Run spatial model using elevation as predictor.
-    
+
     Loads photo data, adds H3 indices, enriches with elevation data,
     and builds a Bayesian ZIP model.
-    
+
     Returns:
         None (displays plots via matplotlib).
     """
     logger.info("Step 1: Load data and add H3 indices")
     # Load data (assuming processed data exists, otherwise fallback to raw photos)
     data_path = REPO_ROOT / "data/processed/photo_geospatial.csv"
-    
+
     if not data_path.exists():
         logger.info("Processed data not found. Trying raw photos...")
         data_path = REPO_ROOT / "data/raw/photos.csv"
@@ -256,7 +280,9 @@ def run_spatial_model() -> None:
 
     # Ensure we have lat/lon
     if "latitude" not in df.columns or "longitude" not in df.columns:
-        logger.error("Latitude/Longitude columns missing. Run the processing pipeline first.")
+        logger.error(
+            "Latitude/Longitude columns missing. Run the processing pipeline first."
+        )
         return
 
     # Apply mushroom taxonomy filter (only for photo-level data)
@@ -268,7 +294,9 @@ def run_spatial_model() -> None:
 
     # Filter to best coverage years
     if "date" in df.columns:
-        df = filter_by_year(df, date_col="date", start_year=START_YEAR, end_year=END_YEAR)
+        df = filter_by_year(
+            df, date_col="date", start_year=START_YEAR, end_year=END_YEAR
+        )
     else:
         logger.warning("Date column not found; skipping year filter")
 
@@ -298,7 +326,7 @@ def run_spatial_model() -> None:
 
         # Create a mapping
         h3_elevation = dict(zip(unique_h3, elevations))
-        
+
         # Map back to dataframe
         df_h3["elevation"] = df_h3["h3_index"].map(h3_elevation)
         missing_elev = df_h3["elevation"].isna().sum()
@@ -322,7 +350,9 @@ def run_spatial_model() -> None:
         # Fill missing elevations if any
         initial_rows = len(daily_counts)
         daily_counts = daily_counts.dropna(subset=["elevation"])
-        logger.info(f"Data ready: {len(daily_counts)} rows (dropped {initial_rows - len(daily_counts)} with missing elevation)")
+        logger.info(
+            f"Data ready: {len(daily_counts)} rows (dropped {initial_rows - len(daily_counts)} with missing elevation)"
+        )
     else:
         logger.error("Date column missing. Cannot aggregate for temporal modeling.")
         return
@@ -350,49 +380,62 @@ def run_spatial_model() -> None:
             model.sample(draws=500, tune=500, chains=2, cores=1)
             logger.info("Sampling complete")
 
+            trace = model.trace
+            if trace is None:
+                raise RuntimeError("Sampling finished without producing a trace")
+
             # Plot trace
             logger.info("Generating trace plots...")
-            
+
             fig, axes = plt.subplots(3, 2, figsize=(12, 10))
-            
+
             var_labels = {
                 "alpha": "α (Intercept)",
-                "betas": "β (Elevation Effect)", 
-                "psi": "ψ (Zero-Inflation Prob)"
+                "betas": "β (Elevation Effect)",
+                "psi": "ψ (Zero-Inflation Prob)",
             }
-            
+
             predictor_cols = ["elevation_std"]
 
             for i, var in enumerate(["alpha", "betas", "psi"]):
                 # Posterior Plot (Left)
                 ax_post = axes[i, 0]
-                
+
                 # Handle betas specially if multidimensional
                 is_multidim_beta = False
                 if var == "betas":
-                    data = model.trace.posterior[var].values
+                    data = trace.posterior[var].values
                     if data.ndim == 3 and data.shape[2] > 1:
                         is_multidim_beta = True
                         # Flatten chains and draws
                         flat_data = data.reshape(-1, data.shape[-1])
                         for idx in range(flat_data.shape[1]):
-                            label = predictor_cols[idx] if idx < len(predictor_cols) else f"beta_{idx}"
+                            label = (
+                                predictor_cols[idx]
+                                if idx < len(predictor_cols)
+                                else f"beta_{idx}"
+                            )
                             sns.kdeplot(flat_data[:, idx], ax=ax_post, label=label)
-                        ax_post.legend(fontsize='x-small')
-                
+                        ax_post.legend(fontsize="x-small")
+
                 if not is_multidim_beta:
-                    az.plot_posterior(model.trace, var_names=[var], ax=ax_post, 
-                                     hdi_prob=0.94, point_estimate="mean")
-                    
+                    az.plot_posterior(
+                        model.trace,
+                        var_names=[var],
+                        ax=ax_post,
+                        hdi_prob=0.94,
+                        point_estimate="mean",
+                    )
+
                 ax_post.set_title(f"{var_labels[var]} - Posterior", fontsize=11)
                 ax_post.set_xlabel("Parameter Value")
                 ax_post.set_ylabel("Density")
-                
+
                 # Manual trace plot to avoid ArviZ shape errors
                 ax_trace = axes[i, 1]
-                data = model.trace.posterior[var]
+                data = trace.posterior[var]
                 values = data.values
-                
+
                 if values.ndim == 2:
                     for chain_idx in range(values.shape[0]):
                         ax_trace.plot(values[chain_idx], alpha=0.5)
@@ -404,22 +447,34 @@ def run_spatial_model() -> None:
                 ax_trace.set_title(f"{var_labels[var]} - MCMC Trace", fontsize=11)
                 ax_trace.set_xlabel("Sample")
                 ax_trace.set_ylabel("Parameter Value")
-            
-            plt.suptitle("Spatial Model: Elevation Effect on Mushroom Counts", 
-                         fontsize=13, fontweight='bold', y=1.02)
+
+            plt.suptitle(
+                "Spatial Model: Elevation Effect on Mushroom Counts",
+                fontsize=13,
+                fontweight="bold",
+                y=1.02,
+            )
             plt.tight_layout()
-            
-            fig.savefig(OUTPUT_DIR / "spatial_model_trace.png", dpi=150, bbox_inches="tight")
+
+            fig.savefig(
+                OUTPUT_DIR / "spatial_model_trace.png", dpi=150, bbox_inches="tight"
+            )
             logger.info(f"Trace plot saved to {OUTPUT_DIR / 'spatial_model_trace.png'}")
-            
+
             # Save summary
-            summary = az.summary(model.trace, var_names=["alpha", "betas", "psi"], round_to=3)
+            summary = az.summary(
+                model.trace, var_names=["alpha", "betas", "psi"], round_to=3
+            )
             summary.to_csv(OUTPUT_DIR / "spatial_model_summary.csv")
-            logger.info(f"Model summary saved to {OUTPUT_DIR / 'spatial_model_summary.csv'}")
-            
+            logger.info(
+                f"Model summary saved to {OUTPUT_DIR / 'spatial_model_summary.csv'}"
+            )
+
             # Save daily counts data
             daily_counts.to_csv(OUTPUT_DIR / "spatial_daily_counts.csv", index=False)
-            logger.info(f"Daily counts saved to {OUTPUT_DIR / 'spatial_daily_counts.csv'}")
+            logger.info(
+                f"Daily counts saved to {OUTPUT_DIR / 'spatial_daily_counts.csv'}"
+            )
         except Exception as e:
             logger.error(f"Modeling failed: {e}", exc_info=True)
     else:

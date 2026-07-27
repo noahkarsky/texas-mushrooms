@@ -1,0 +1,324 @@
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.nav {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.nav a {
+  color: #222;
+  text-decoration: none;
+}
+
+.nav a.active {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.page {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.page-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e5e5;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.page-body {
+  min-height: 0;
+}
+
+.map-wrap {
+  height: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.card {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.card img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  display: block;
+}
+
+.card-body {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input {
+  padding: 6px 8px;
+  border: 1px solid #cfcfcf;
+  border-radius: 6px;
+}
+
+.select {
+  padding: 6px 8px;
+  border: 1px solid #cfcfcf;
+  border-radius: 6px;
+}
+
+.button {
+  padding: 6px 10px;
+  border: 1px solid #cfcfcf;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------- */
+/* Seasons page                                                          */
+/* --------------------------------------------------------------------- */
+.seasons {
+  background: #0c0e12;
+  color: #e7e9ee;
+}
+
+.seasons-header {
+  border-bottom: 1px solid #23262e;
+  background: #0c0e12;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 16px 18px 12px;
+}
+
+.seasons-masthead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seasons-title {
+  margin: 0;
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #f2f4f8;
+}
+
+.seasons-intro {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #aeb4c0;
+}
+
+.seasons-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.seasons-controls .ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #aeb4c0;
+}
+
+.seasons-controls-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.seasons .input,
+.seasons .select {
+  background: #171a21;
+  border: 1px solid #2c313b;
+  color: #e7e9ee;
+}
+
+.seg {
+  display: inline-flex;
+  background: #14171d;
+  border: 1px solid #2c313b;
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.seg-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #aeb4c0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.seg-btn:hover {
+  color: #e7e9ee;
+}
+
+.seg-btn[aria-pressed='true'] {
+  background: #2c313b;
+  color: #f2f4f8;
+}
+
+.proxy-input {
+  width: 108px;
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+.proxy-input:focus {
+  opacity: 1;
+}
+
+.season-count {
+  font-size: 12px;
+  color: #8b91a0;
+}
+
+.seasons-body {
+  overflow: auto;
+  padding: 0 16px;
+}
+
+.seasons-canvas {
+  display: block;
+  width: 100%;
+}
+
+.seasons-empty {
+  padding: 40px;
+  color: #8b91a0;
+}
+
+.season-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: 240px;
+  background: #171a21;
+  border: 1px solid #2c313b;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.swatch-chip {
+  height: 6px;
+  width: 100%;
+}
+
+.season-tooltip-img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+  background: #0c0e12;
+}
+
+.season-tooltip-meta {
+  padding: 9px 11px 11px;
+}
+
+.season-tooltip-species {
+  font-weight: 600;
+  font-size: 13px;
+  color: #e7e9ee;
+}
+
+.season-tooltip-genus {
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: #b48ead;
+  margin-top: 1px;
+}
+
+.season-tooltip-date {
+  font-size: 12px;
+  color: #aeb4c0;
+  margin-top: 3px;
+}
+
+.season-tooltip-hint {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 6px;
+}
+
+.ridge-tooltip {
+  width: 272px;
+}
+
+.ridge-tooltip-head {
+  padding: 10px 11px 8px;
+}
+
+.ridge-tooltip-head .swatch-chip {
+  height: 4px;
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.ridge-tooltip-head .season-tooltip-meta {
+  padding: 0;
+}
+
+.ridge-tooltip-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 2px;
+  background: #0c0e12;
+}
+
+.ridge-tooltip-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: #0c0e12;
+}
+
+.ridge-tooltip .season-tooltip-hint {
+  padding: 0 11px 11px;
+  margin-top: 0;
+}

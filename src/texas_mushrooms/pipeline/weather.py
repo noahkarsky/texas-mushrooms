@@ -253,11 +253,12 @@ def fetch_elevation_batch(
             "longitude": ",".join(map(str, lons_chunk)),
         }
 
+        chunk_elev: list[float | None]
         try:
             response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            chunk_elev = data.get("elevation", [None] * len(lats_chunk))  # type: ignore
+            chunk_elev = data.get("elevation", [None] * len(lats_chunk))
         except requests.RequestException as e:
             print(f"Warning: Failed to fetch elevation for chunk starting at {i}: {e}")
             chunk_elev = [None] * len(lats_chunk)

@@ -1,10 +1,11 @@
 import argparse
-import logging
 import dataclasses
+import logging
 from pathlib import Path
 
 import pandas as pd
 
+from .config.filter_config import SpatialFilter
 from .scrape.core import crawl
 
 
@@ -14,6 +15,51 @@ def setup_logging() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+
+def _run_inat(args: argparse.Namespace) -> None:
+    """Fetch iNaturalist research-grade fungi observations (separate source)."""
+    from .scrape import inaturalist as inat
+
+    if args.bbox:
+        min_lon, min_lat, max_lon, max_lat = args.bbox
+        bbox = SpatialFilter(
+            min_lon=min_lon, min_lat=min_lat, max_lon=max_lon, max_lat=max_lat
+        )
+    else:
+        bbox = SpatialFilter.default()
+
+    logging.info("Fetching iNaturalist observations for %s", bbox)
+    result = inat.fetch_observations(
+        bbox=bbox,
+        delay=args.delay,
+        max_pages=args.max_pages,
+    )
+    logging.info(
+        "Fetched %d observations, %d photos",
+        len(result.observations),
+        len(result.photos),
+    )
+
+    if args.download_images:
+        image_dir = Path(args.image_dir)
+        logging.info("Downloading license-permitting photos to %s", image_dir)
+        inat.download_photos(result.photos, image_dir, delay=args.delay)
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    df_obs = pd.DataFrame([dataclasses.asdict(o) for o in result.observations])
+    df_photos = pd.DataFrame([dataclasses.asdict(p) for p in result.photos])
+
+    obs_path = out_dir / "observations.csv"
+    photos_path = out_dir / "photos.csv"
+    df_obs.to_csv(obs_path, index=False)
+    df_photos.to_csv(photos_path, index=False)
+
+    logging.info("Wrote %s (%d rows)", obs_path, len(df_obs))
+    logging.info("Wrote %s (%d rows)", photos_path, len(df_photos))
+    logging.info("Done!")
 
 
 def main() -> None:
@@ -44,7 +90,50 @@ def main() -> None:
         help="Directory to save downloaded images",
     )
 
+    # iNaturalist command (separate, parallel data source)
+    inat_parser = subparsers.add_parser(
+        "inat", help="Fetch iNaturalist research-grade fungi observations"
+    )
+    inat_parser.add_argument(
+        "--delay", type=float, default=1.0, help="Delay between API pages in seconds"
+    )
+    inat_parser.add_argument(
+        "--out-dir",
+        type=str,
+        default="data/raw/inaturalist",
+        help="Output directory for iNaturalist data",
+    )
+    inat_parser.add_argument(
+        "--download-images",
+        action="store_true",
+        help="Download license-permitting photos locally",
+    )
+    inat_parser.add_argument(
+        "--image-dir",
+        type=str,
+        default="data/raw/inaturalist/images",
+        help="Directory to save downloaded photos",
+    )
+    inat_parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        help="Limit number of API pages fetched (200 obs/page)",
+    )
+    inat_parser.add_argument(
+        "--bbox",
+        type=float,
+        nargs=4,
+        metavar=("MIN_LON", "MIN_LAT", "MAX_LON", "MAX_LAT"),
+        default=None,
+        help="Bounding box (default: SpatialFilter.default(), Houston/Big Thicket)",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "inat":
+        _run_inat(args)
+        return
 
     if args.command == "crawl":
         logging.info(f"Starting crawl with limit={args.limit}, delay={args.delay}")

@@ -184,3 +184,15 @@ cython_debug/
 data/raw/images/
 .mypy_cache/
 .ruff_cache/
+
+node_modules/
+web/node_modules/
+web/dist/
+web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+/data/raw
+/data

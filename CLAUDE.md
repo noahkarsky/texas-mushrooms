@@ -1,220 +1,127 @@
-# CLAUDE.md — Texas Mushrooms
+# CLAUDE.md
 
-AI assistant guide for the `texas-mushrooms` codebase. Read this before making any changes.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## What this is
 
-A polite web scraper and data pipeline for [texasmushrooms.org](https://www.texasmushrooms.org/). Extracts daily mushroom observations (photos, species IDs, geolocations from KMZ/KML files), enriches them with historical weather data from Open-Meteo, and prepares datasets for exploratory analysis and Bayesian spatial modeling.
+A polite web scraper + data pipeline for [texasmushrooms.org](https://www.texasmushrooms.org/) that extracts daily mushroom observations, photos, and species IDs, enriches them with weather/elevation data, runs Bayesian models, and exposes the results through a React web UI. The Python package is `texas_mushrooms` (in `src/`), installed editable.
 
-## Development Setup
-
-**Python**: 3.12–3.13 (strict; enforced in `pyproject.toml`)
+## Commands
 
 ```bash
-# Install all dependencies (including dev)
+# Install (pip)
 pip install -e .[dev]
+# or Poetry — the repo has poetry.lock; the active venv lives at
+#   C:/Users/noahk/AppData/Local/pypoetry/Cache/virtualenvs/texas-mushrooms-FHq9QisE-py3.12/
 
-# Or with Poetry
-poetry install
+# Dev checks — run all of these before every commit (mypy is strict; ruff line-length 88)
+pytest
+pytest tests/test_scraper.py::test_parse_index_extracts_dates   # single test
+mypy src
+ruff check .          # auto-fix: ruff check --fix .
+ruff format .
+
+pre-commit install           # once after cloning
+pre-commit run --all-files   # runs ruff, ruff-format, mypy on commit
 ```
 
-**Pre-commit hooks** (install once after cloning):
-```bash
-pre-commit install
-```
+Use the project venv, not whatever `pytest`/`mypy` is first on PATH — a bare `pytest` may resolve to a system Python that lacks the deps. `pyproject.toml` requires Python `>=3.12,<3.14`, and ruff/mypy `target-version`/`python_version` are pinned to `py312` to match: leaving them at `py311` makes mypy choke on numpy's stubs, which use 3.12-only `type` statements.
 
-## Essential Commands
+The pre-commit mypy hook runs in its **own isolated env**, so any stub or library it needs must be listed under `additional_dependencies` in `.pre-commit-config.yaml` — that hook also checks `scripts/` and `tests/` (24 files), which the documented `mypy src` (17 files) does not.
 
-### Quality Gates — run these before every commit
+## Pipeline (run in this order)
 
-```bash
-pytest              # Run tests
-ruff check .        # Lint (auto-fix: ruff check --fix .)
-ruff format .       # Format (line length: 88)
-mypy src            # Type-check (strict mode)
-```
+Each stage reads the previous stage's output from `data/`. Stages are separate entry points, not a single orchestrator.
 
-Pre-commit runs ruff + mypy automatically on staged files.
+1. **Scrape** → `data/raw/{days.csv,photos.csv}` (and optionally `data/raw/images/YYYY-MM-DD/`)
+   ```bash
+   python -m texas_mushrooms.cli crawl --limit 5              # test
+   python -m texas_mushrooms.cli crawl --delay 1.0 --download-images   # full
+   ```
+1b. **iNaturalist (separate source)** → `data/raw/inaturalist/{observations.csv,photos.csv}` (research-grade fungi in the same bbox; kept parallel to the texasmushrooms.org data, never merged)
+   ```bash
+   python -m texas_mushrooms.cli inat --max-pages 1 --download-images   # test
+   python -m texas_mushrooms.cli inat --delay 1.0 --download-images     # full bbox pull
+   ```
+2. **Weather** → `data/external/daily_weather.csv` (infers date range from `days.csv`, fetches Open-Meteo)
+   ```bash
+   python -m texas_mushrooms.pipeline.weather
+   ```
+3. **Prepare datasets** → `data/processed/{photos_cleaned,photo_geospatial,species_frequency,mushroom_daily}.csv`
+   ```bash
+   python scripts/prepare_datasets.py
+   # options: --no-filter-years  --no-filter-species  --no-spatial-filter
+   #          --bbox "29.9,31.2,-95.9,-94.0"
+   ```
+4. **Spatial/weather models** → `data/outputs/` (PyMC summaries, trace PNGs, `spatial_daily_counts.csv`)
+   ```bash
+   python scripts/run_spatial_analysis.py
+   ```
+5. **Export web assets** → `web/public/data/{h3_cells.geojson,photos_index.json}`
+   ```bash
+   python scripts/export_web_assets.py
+   ```
+5b. **Export season assets** (for the `/seasons` viz) → `web/public/data/{season_photos.json,season_weather.json}`
+   ```bash
+   python scripts/export_season_assets.py
+   ```
+6. **Web UI** (see `web/README.md`): `cd web && npm install && npm run dev`
 
-### Scraping & Data Collection
+`scripts/run_pipeline.py` is a backward-compat shim that delegates to `prepare_datasets.py`.
 
-```bash
-# Test crawl — first 5 days, metadata only
-python -m texas_mushrooms.cli crawl --limit 5 --delay 1.0
-
-# Full crawl with image download (long-running, be polite)
-python -m texas_mushrooms.cli crawl --delay 1.0 --download-images
-
-# Fetch historical weather (requires data/raw/days.csv to exist)
-python -m texas_mushrooms.pipeline.weather
-```
-
-### Processing Pipeline
-
-```bash
-# Full processing pipeline (taxonomy filter + spatial filter + feature engineering)
-python scripts/prepare_datasets.py
-
-# Options
-python scripts/prepare_datasets.py --no-filter-years    # Include all years (default: 2018–2024)
-python scripts/prepare_datasets.py --no-filter-species  # Skip taxonomy filter
-python scripts/prepare_datasets.py --no-spatial-filter  # Skip bounding box filter
-python scripts/prepare_datasets.py --bbox "29.9,31.2,-95.9,-94.0"
-
-# Run as module (equivalent)
-python -m texas_mushrooms.pipeline.processing
-```
-
-### Spatial Analysis / Modeling
-
-```bash
-python scripts/run_spatial_analysis.py
-```
-
-## Repository Layout
+## Repository layout
 
 ```
 texas-mushrooms/
-├── src/texas_mushrooms/       # Main package
-│   ├── cli.py                 # CLI entry point (crawl subcommand)
+├── src/texas_mushrooms/
+│   ├── cli.py                 # CLI entry point (crawl, inat subcommands)
+│   ├── web_proxy.py           # local image server + hotlink-bypass proxy
 │   ├── scrape/
 │   │   ├── core.py            # HTML parsing, KMZ/KML geolocation extraction
-│   │   └── schemas.py         # Data models: DayPage, PhotoRecord, SpeciesRef
+│   │   ├── inaturalist.py     # separate iNaturalist API source
+│   │   └── schemas.py         # dataclasses: DayPage, PhotoRecord, SpeciesRef
 │   ├── pipeline/
-│   │   ├── processing.py      # Preprocessing, feature engineering, exports (~650 lines)
-│   │   ├── weather.py         # Open-Meteo weather API integration
+│   │   ├── processing.py      # preprocessing, feature engineering, exports
+│   │   ├── weather.py         # Open-Meteo integration
 │   │   ├── spatial.py         # H3 hexagonal grid indexing
-│   │   └── filters.py         # Year / taxonomy / bounding-box filters
-│   ├── config/
-│   │   └── filter_config.py   # MushroomFilter (YAML-backed) + SpatialFilter
-│   └── modeling/
-│       └── bayesian.py        # PyMC Poisson & Zero-Inflated Poisson models
-├── scripts/
-│   ├── prepare_datasets.py    # CLI wrapper for run_full_pipeline()
-│   ├── run_spatial_analysis.py
-│   └── run_pipeline.py
-├── notebooks/
-│   ├── EDA.ipynb
-│   └── spatial_analysis.ipynb
-├── tests/
-│   ├── test_scraper.py
-│   └── test_run_spatial_analysis.py
-├── config/
-│   └── mushroom_filter.yaml   # Taxonomy filter config (edit here, not in code)
-├── data/
-│   ├── raw/                   # Scraped output: days.csv, photos.csv, images/
-│   ├── external/              # Weather data: daily_weather.csv
-│   ├── processed/             # Pipeline output CSVs
-│   └── outputs/               # Analysis artefacts
-├── pyproject.toml
-├── .pre-commit-config.yaml
-└── README.md
+│   │   └── filters.py         # year / taxonomy / bounding-box filters
+│   ├── config/filter_config.py  # MushroomFilter (YAML-backed) + SpatialFilter
+│   └── modeling/bayesian.py     # PyMC Poisson & Zero-Inflated Poisson models
+├── scripts/                   # prepare_datasets, run_spatial_analysis,
+│                              # export_web_assets, export_season_assets, run_web.ps1
+├── web/                       # React + Vite UI (src/pages/{Map,Photos,Seasons}.tsx)
+├── notebooks/                 # EDA.ipynb, spatial_analysis.ipynb
+├── tests/                     # test_scraper.py, test_run_spatial_analysis.py
+├── config/mushroom_filter.yaml  # taxonomy filter config (edit here, not in code)
+└── data/                      # raw/ external/ processed/ outputs/ — git-ignored
 ```
 
-## Data Flow
+## Architecture notes
 
-```
-texasmushrooms.org
-        │
-        ▼  cli crawl
-  scrape/core.py
-  ├── parse_index()       → list of day URLs
-  ├── parse_day_page()    → DayPage (weather summary, species, photos)
-  └── parse_kmz()         → per-photo lat/lon via ROLL-NN placemark matching
-        │
-        ▼  data/raw/
-  days.csv          (1 row/day: date, weather_summary, species_text, kmz_url, lat, lon)
-  photos.csv        (1 row/photo: date, photo_url, caption, species_list, lat, lon)
-  images/YYYY-MM-DD/
-        │
-        ▼  pipeline/weather.py
-  data/external/daily_weather.csv  (temp, rain, wind, humidity, soil_temp, soil_moisture)
-        │
-        ▼  pipeline/processing.py → scripts/prepare_datasets.py
-  data/processed/
-  ├── photos_cleaned.csv      (photos + parsed species lists)
-  ├── photo_geospatial.csv    (photos with valid lat/lon)
-  ├── species_frequency.csv   (occurrence counts)
-  └── mushroom_daily.csv      (daily timeseries + weather features for modeling)
-        │
-        ▼  modeling/bayesian.py
-  Poisson / Zero-Inflated Poisson regression (PyMC)
-```
+- **`src/texas_mushrooms/scrape/`** — `core.py` does all HTTP/HTML work (checks `robots.txt`, custom `USER_AGENT`, `BASE_URL`, `html.parser`). `schemas.py` defines the internal models as **`dataclasses`** (`DayPage`, `PhotoRecord`, `SpeciesRef`) — the README's mention of Pydantic is stale; use `dataclasses.asdict`, not `model_dump`.
+- **Geolocation** is derived from per-day KMZ (zipped KML) files. Photo filenames (`.../archives/YYYY/ROLL/jpeg/NNb.jpg`) map to a `ROLL-NN` key matched against KML Placemark names; the day's first point is the fallback. See README "Geolocation Details".
+- **`pipeline/processing.py`** — the heart of stage 3. `run_full_pipeline` = `run_preprocessing` (clean photos, parse species, spatial + taxonomy filters, geospatial/frequency exports) then `build_modeling_dataset` (daily calendar from weather, mushroom presence, lagged rain + seasonality features → `mushroom_daily.csv`).
+- **`modeling/bayesian.py`** — `BayesianMushroomModel` builds Poisson / zero-inflated-Poisson (ZIP) PyMC models. Weather predictors: `rain_1d`, `rain_3d`, `rain_7d` (rolling), `temp_range`, seasonal `sin`/`cos` day-of-year features. `scripts/run_spatial_analysis.py` runs two models: weather-predictor ZIP on `mushroom_daily.csv`, and elevation ZIP on H3-binned photos.
+- **`scrape/inaturalist.py`** — a **separate, parallel data source** to the texasmushrooms.org scraper. Fetches research-grade fungi (`taxon_id=47170`, `quality_grade=research`) from the public iNaturalist API for a bbox (default `SpatialFilter.default()`), cursor-paginated via `id_above` to bypass the 10k-result cap. Emits observation-level + photo-level records under `data/raw/inaturalist/`; images are only downloaded when the photo license permits redistribution (`DOWNLOADABLE_LICENSES`). Wired as the `inat` CLI subcommand. `scripts/export_web_assets.py` emits **separate** web assets for it — `web/public/data/{h3_cells_inat.geojson,photos_index_inat.json}` tagged `source: "inaturalist"` — and the Map/Photos pages have a source toggle (texasmushrooms / iNaturalist / both). iNat data is intentionally **not** fed into the Bayesian models or the Seasons viz.
+- **`web_proxy.py`** — the upstream image host uses hotlink protection; this stdlib HTTP server serves local `data/raw/images/` and offers a `/proxy?url=&ref=` endpoint restricted to an `ALLOWED_NETLOCS` allowlist. Run with `python -m texas_mushrooms.web_proxy --port 8001`.
+- **`scripts/export_season_assets.py` + `web/src/pages/Seasons.tsx`** — the "Seasons" viz. The script extracts a dominant color per photo (Pillow octree quantize on a 64px thumbnail, saturation-preferring so the dot reflects the mushroom not the leaf litter; cached in `data/processed/photo_colors.csv`) and a per-year/day-of-year wetness anomaly (SPI-like z-score of trailing-30-day rain vs the 2007–2024 climatology). Local images are matched by `endswith("_" + url_basename)` (disk files are `NNN_`-prefixed). The React page renders everything on a single `<canvas>` (8,800 dots + weather stripes — too many nodes for SVG), with day-of-year x-axis small-multiples by year, a Year zoom (single tall row), a Month filter (zooms the x-axis), species filter, and hover previews via the proxy. Hover previews need `web_proxy.py` running.
 
-## Code Conventions
+## Conventions & gotchas
 
-### Type Hints
-- Strict `mypy` compliance is required (`strict = true` in `pyproject.toml`).
-- Add `from __future__ import annotations` at the top of every module.
-- Never use `Any` unless unavoidable; document why if used.
+- **Filtering is layered and repeated.** Three orthogonal filters recur across stages: **year** (`START_YEAR=2018`, `END_YEAR=2024`, best-coverage window — off via `--no-filter-years`), **spatial bbox** (`SpatialFilter.default()` ≈ Houston/Big Thicket area — off via `--no-spatial-filter`), and **taxonomy** (off via `--no-filter-species`). `--no-filter` is a deprecated alias for `--no-filter-years`.
+- **Taxonomy filter is config-driven** by `config/mushroom_filter.yaml`, loaded via `MushroomFilter.from_yaml()` (in `config/filter_config.py`). It keeps "cool" stalked mushrooms and excludes crusts/slime molds/shelf fungi/lichens via a genus blacklist + species whitelist overrides + caption keywords. Priority chain: species whitelist → genus/species blacklist → caption keywords. Edit the YAML to change what's kept; Python code should not contain taxon names, and the `taxonomy_reference` section at the bottom is documentation only, not read by code.
+- **Windows + PyMC:** always sample with `cores=1` — multiprocessing chains hang on Windows.
+- **H3 resolution 7** is the standard for spatial binning (`spatial.add_h3_indices`); `spatial.py` handles both the new (`cell_to_boundary`/`latlng_to_cell`) and old h3-py APIs.
+- Use `pathlib.Path` and `from __future__ import annotations` everywhere; scripts resolve paths relative to repo root via `Path(__file__).resolve().parent.parent`. Avoid `Any` unless unavoidable (mypy is strict); parse dates with `pd.to_datetime`.
+- Use the `logging` module, not `print` — `INFO` for progress milestones, `WARNING`/`ERROR` for failures.
+- **Scraping politeness (non-negotiable):** keep `--delay` ≥ 1.0, always send the custom User-Agent and `Referer`, respect `robots.txt`, and handle HTTP errors by logging and continuing rather than aborting.
+- **Never commit `data/`** — it is git-ignored and regenerated by running the pipeline. No CSVs, no downloaded images.
+- Plots follow Tufte principles (maximize data-ink, small multiples, labelled axes, purposeful color, no chartjunk) per the Copilot instructions.
 
-### Data Structures
-- **Scraping layer**: Use Python `dataclasses` (`DayPage`, `PhotoRecord`, `SpeciesRef`).
-- **Processing layer**: Use `pandas.DataFrame`. Always parse dates with `pd.to_datetime`.
-- **Paths**: Always use `pathlib.Path`, never raw strings for file paths.
+## Adding features — checklist
 
-### Web Scraping — Politeness Rules (non-negotiable)
-- Never remove or reduce the `--delay` default (1.0 s between requests).
-- Always pass the custom User-Agent and `Referer` header (see `core.py`).
-- Respect `robots.txt` (already handled in `crawl()`).
-- Handle HTTP errors gracefully — log and continue, do not raise and abort.
-
-### Logging
-- Use the standard `logging` module, not `print`.
-- Log at `INFO` for progress milestones and `WARNING`/`ERROR` for failures.
-
-### Configuration
-- Taxonomy inclusions/exclusions belong in `config/mushroom_filter.yaml`, not hardcoded in Python.
-- Spatial defaults (Houston bbox, KIAH weather station coords) live in `filter_config.py` and `weather.py` respectively; update there if the study area changes.
-
-### Formatting
-- Line length: **88** characters (ruff default).
-- Ruff handles all formatting; do not manually reformat — just run `ruff format .`.
-
-## Key Design Decisions
-
-### Geolocation via KMZ
-Each day page may link a KMZ (zipped KML) file. Photos follow the URL pattern `.../archives/YYYY/ROLL/jpeg/NNb.jpg`. The scraper derives a `ROLL-NN` key (e.g., `3642-24`) and matches it against KML `<Placemark>` names to assign per-photo coordinates. If no match exists, the day-level coordinate is used as fallback.
-
-### Taxonomy Filtering
-`MushroomFilter` applies a three-level priority chain:
-1. **Species whitelist** — always include (e.g., medicinal Ganoderma spp.)
-2. **Species/genus blacklist** — always exclude shelf fungi, crusts, slime molds, lichens
-3. **Caption keywords** — fallback for unlabelled photos (e.g., "resupinate", "shelf fungus")
-
-Edit `config/mushroom_filter.yaml` to adjust; Python code should not contain taxon names.
-
-### Temporal Scope
-Default filter: **2018–2024** — years with the most consistent observation coverage. Pass `--no-filter-years` to include all scraped years.
-
-### Spatial Scope
-Default bounding box: Houston area (29.9–31.2°N, 95.9–94.0°W). Configurable via `--bbox`.
-
-### H3 Spatial Indexing
-`pipeline/spatial.py` converts lat/lon to H3 hexagonal indices at resolutions 7 (~1.2 km) and 8 (~0.46 km), creating a spatiotemporal grid that handles zero-inflation in Bayesian models.
-
-### Modelling
-`modeling/bayesian.py` provides:
-- `build_poisson_model()` — standard Poisson regression
-- `build_zip_model()` — Zero-Inflated Poisson (preferred; most days have zero observations)
-- Weather predictors: `rain_1d`, `rain_3d`, `rain_7d` (rolling), `temp_range`, seasonal `sin`/`cos` day-of-year features
-
-## Data Files — Do Not Commit
-
-`data/` is git-ignored. Never commit CSV data files or downloaded images. The `data/` tree is generated by running the pipeline.
-
-## Adding New Features — Checklist
-
-1. **Scraping changes**: Update `schemas.py` dataclasses first, then `core.py` parsing logic, then CSV export in `cli.py`.
-2. **New pipeline step**: Add a function to the appropriate `pipeline/` module; call it from `run_full_pipeline()` in `processing.py`.
-3. **New filter**: Add to `filters.py` and expose as a CLI flag in `scripts/prepare_datasets.py`.
-4. **New model**: Add to `modeling/bayesian.py`; follow the existing `build_*_model()` + `sample()` pattern.
-5. Run `pytest`, `ruff check .`, and `mypy src` before opening a PR.
-
-## Visualization Guidelines (Tufte principles)
-
-All plots in notebooks and scripts should:
-- Maximize the data-ink ratio; remove non-data ink (gridlines, borders, backgrounds).
-- Use small multiples for comparisons across species, years, or regions.
-- Label axes and use appropriate scales; avoid chartjunk.
-- Use color purposefully, not decoratively.
+1. **Scraping changes:** update `schemas.py` dataclasses first, then `core.py` parsing, then CSV export in `cli.py`.
+2. **New pipeline step:** add a function to the relevant `pipeline/` module and call it from `run_full_pipeline()` in `processing.py`.
+3. **New filter:** add to `filters.py` and expose a CLI flag in `scripts/prepare_datasets.py`.
+4. **New model:** add to `modeling/bayesian.py`, following the existing build + sample pattern.
+5. Run `pytest`, `ruff check .`, `ruff format .`, and `mypy src` before opening a PR.

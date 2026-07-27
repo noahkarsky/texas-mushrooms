@@ -169,7 +169,7 @@ def extract_kmz_url(soup: BeautifulSoup, page_url: str) -> Optional[str]:
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if href.endswith(".kmz") or "date-loc" in href:
-            return urljoin(page_url, href)
+            return urljoin(page_url, str(href))
     return None
 
 

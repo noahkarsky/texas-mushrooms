@@ -1,5 +1,5 @@
 # Mushroom Filter Configuration
-# Filters observations to "cool" stalked mushrooms, excluding crusts, slime molds, 
+# Filters observations to "cool" stalked mushrooms, excluding crusts, slime molds,
 # shelf fungi (except boletes), and lichens.
 #
 # Strategy: Genus-level blacklist with explicit overrides.
@@ -38,7 +38,7 @@ filter:
     - Hexagonia         # Hexagonal-pored polypore
     - Earliella         # Bracket fungus
     - Nigroporus        # Dark-pored bracket
-    
+
     # --- Crust/Resupinate Fungi ---
     - Stereum           # Parchment fungi
     - Xylodon           # Crust fungi
@@ -53,7 +53,7 @@ filter:
     - Schizopora        # Crust fungi
     - Steccherinum      # Crust/tooth fungi
     - Radulomyces       # Crust fungi
-    
+
     # --- Slime Molds (Myxomycota) ---
     - Fuligo            # Dog vomit slime mold
     - Lycogala          # Wolf's milk
@@ -71,7 +71,7 @@ filter:
     - Lamproderma       # Slime mold
     - Cribraria         # Slime mold
     - Metatrichia       # Slime mold
-    
+
     # --- Lichens ---
     - Xanthoparmelia    # Shield lichens
     - Heterodermia      # Fringe lichens
@@ -158,7 +158,7 @@ taxonomy_reference:
     - Cortinarius
     - Inocybe
     - Hebeloma
-    
+
   boletes:  # Pored mushrooms with stalks - GOOD!
     - Boletus
     - Tylopilus
@@ -179,25 +179,25 @@ taxonomy_reference:
     - Phylloporus
     - Boletellus
     - Heimioporus
-    
+
   chanterelles:
     - Cantharellus
     - Craterellus
     - Polyozellus
-    
+
   tooth_fungi_stalked:  # Stalked tooth fungi - interesting!
     - Hydnum
     - Sarcodon
     - Hericium
     - Phellodon
-    
+
   clubs_and_corals:  # Interesting morphology
     - Clavaria
     - Clavulinopsis
     - Clavulina
     - Ramaria
     - Ramariopsis
-    
+
   puffballs_stalked:
     - Lycoperdon
     - Calvatia
