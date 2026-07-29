@@ -78,8 +78,11 @@ the same field labeled "proxy"). The Seasons page's hover previews require this.
   day-of-year and painted the mushroom's own dominant color, over a wet/dry weather ribbon. Controls:
   ribbon mode (rain / temp / genera / off), year zoom, month filter, species filter, hover preview.
   Canvas rather than SVG because that many nodes won't render smoothly.
-- **`/photos` — Photos.** Paginated grid (200 at a time) with source badges and links back to the
-  original observation page.
+
+Routing uses `HashRouter` (`#/seasons`) so deep links survive a refresh on GitHub Pages, and data
+files are fetched through `src/dataUrl.ts` so they resolve under a project subpath. A Photos grid
+used to live at `/photos`; it was removed because the site cannot serve photographs publicly —
+see the deployment notes in the root README.
 
 ## Stack
 

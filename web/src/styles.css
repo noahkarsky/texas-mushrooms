@@ -246,12 +246,27 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial
   width: 100%;
 }
 
-.season-tooltip-img {
+/* The wrapper carries an inline background-color set to that photo's own
+   extracted color, so a pending image reads as a color chip rather than the
+   black rectangle a dark placeholder used to leave. The image fades in over it.
+   The color must live on the wrapper, not the <img>: fading the image would
+   fade its background with it. */
+.season-tooltip-imgwrap {
   width: 100%;
   height: 160px;
+}
+
+.season-tooltip-img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   display: block;
-  background: #0c0e12;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.season-tooltip-img.is-loaded {
+  opacity: 1;
 }
 
 .season-tooltip-meta {

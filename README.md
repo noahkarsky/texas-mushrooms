@@ -26,8 +26,8 @@ never merged**; they are exported as parallel assets and toggled in the UI.
   counts and elevation-driven spatial counts.
 - **iNaturalist source** — cursor-paginated pull of research-grade fungi in the same bbox, with
   license-aware image downloading.
-- **Web UI** — Leaflet H3 hex map, a canvas seasonal visualization (8,800 photos as dots colored by
-  the mushroom's own dominant color), and a filterable photo grid.
+- **Web UI** — Leaflet H3 hex map and a canvas seasonal visualization (8,800 photos as dots colored
+  by the mushroom's own dominant color). Static, and deployable to GitHub Pages.
 
 ## Setup
 
@@ -134,7 +134,7 @@ the foreground. Open **http://localhost:5173**. Ctrl+C stops both.
 Useful switches:
 
 - `-Export` — re-run `scripts/export_web_assets.py` first.
-- `-SkipProxy` — don't start the image proxy (photos will show as broken).
+- `-SkipProxy` — don't start the image proxy (Seasons hover previews show swatches only).
 - `-ProxyPort 8002` — use a different proxy port.
 
 ### Manual path
@@ -158,9 +158,10 @@ And, in a second terminal, the image server:
 python -m texas_mushrooms.web_proxy --port 8001
 ```
 
-Then set **Local Images Base URL** to `http://127.0.0.1:8001` in the Map/Photos pages (the Seasons
-page has the same box labeled "proxy"). Without it, the Map and Photos pages still work, but images
-won't load — the upstream host uses hotlink protection.
+The Seasons page has a box labeled "proxy" — set it to `http://127.0.0.1:8001` for hover previews.
+It defaults to that in development and to empty in a production build, since a published site has
+no proxy. Without one the tooltip shows the color swatch, species and date instead of an image;
+the upstream host uses hotlink protection, so no photo request is made at all.
 
 For a production build: `npm run build` (output in `web/dist/`), preview with `npm run preview`.
 
@@ -169,8 +170,44 @@ For a production build: `npm run build` (output in `web/dist/`), preview with `n
 | Route | What it shows |
 | --- | --- |
 | `/` (Map) | Leaflet map of H3 res-7 cells, colored by total photos or mean elevation. Source toggle: texasmushrooms.org / iNaturalist / both. |
-| `/seasons` | Canvas visualization — one dot per photo by day-of-year, painted the mushroom's dominant color, over a wet/dry weather ribbon. Year zoom, month filter, species filter, hover previews. |
-| `/photos` | Paginated photo grid with source badges and links back to the original page. |
+| `/seasons` | Canvas visualization — one dot per photo by day-of-year, painted the mushroom's dominant color (see [How the dot colors are measured](#how-the-dot-colors-are-measured)), over a wet/dry weather ribbon. Year zoom, month filter, species filter, hover previews. |
+
+Routes are hash-based (`#/seasons`) so they survive a refresh on GitHub Pages.
+
+### How the dot colors are measured
+
+A whole-frame color histogram returns the color of the *scene* — soil, leaf
+litter, shadow — because on a forest-floor photograph the mushroom is a small
+minority of the pixels. `src/texas_mushrooms/pipeline/color.py` therefore
+isolates the subject before measuring it: it builds a background color model
+from the four border bands, weights every pixel by how unlike that background it
+is, times local **smoothness** (leaf litter is the most textured surface in
+frame; mushroom flesh is among the least) times a mild center prior, keeps the
+top 20% of pixels, and runs a weighted k-means in OKLab. No model, no network,
+no LLM — just Pillow and numpy, deterministic and seeded.
+
+**How well it works.** Photographers state the color in ~1,890 captions ("Light
+yellow resupinate fungus on a log…"), which is free ground truth.
+`scripts/eval_photo_colors.py` scores each extractor by nearest-class-prototype
+accuracy under 5-fold CV. Against the previous whole-frame octree extractor:
+
+| | old | new |
+| --- | --- | --- |
+| CV accuracy (chance ≈ 0.04) | 0.152 | **0.232** |
+| genus color coherence (lower is better) | 0.932 | **0.819** |
+| recall: yellow / orange / black | 0.045 / 0.011 / 0.026 | **0.358 / 0.236 / 0.569** |
+| recall: white / red | 0.152 / 0.287 | **0.266 / 0.452** |
+
+**Known limits.** Brown and green recall *drop* (0.378 → 0.040, 0.244 → 0.024).
+That is not a regression in disguise: the old extractor scored well on brown by
+predicting brown for everything — it answered "brown" 490 times for 347 truly
+brown photos, at 0.267 precision, and answered "blue" 175 times at 0.000
+precision. The new extractor's precision on the colors that matter is 0.34–0.40
+versus 0.01–0.27. Genuinely drab species remain hard by construction: when the
+mushroom really is the color of the litter, "distance from the background" is
+the wrong signal, and those photos fall back to the old whole-frame color.
+The caption-labeled set is also biased — photographers name a color mainly for
+distinctive specimens.
 
 ### Assets the site expects in `web/public/data/`
 
@@ -179,6 +216,31 @@ For a production build: `npm run build` (output in `web/dist/`), preview with `n
 | `h3_cells.geojson`, `photos_index.json` | `scripts/export_web_assets.py` |
 | `h3_cells_inat.geojson`, `photos_index_inat.json` | `scripts/export_web_assets.py` (iNaturalist) |
 | `season_photos.json`, `season_weather.json` | `scripts/export_season_assets.py` |
+
+`photos_index*.json` is no longer fetched by any page — it remains an **input** to
+`export_season_assets.py`, and the deploy workflow prunes it from the published site.
+
+## Deploying
+
+The site is fully static and lives on GitHub Pages via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which builds `web/` and publishes
+on every push to `main` that touches it. Enable it once under **Settings → Pages → Source: GitHub
+Actions**; after that it is automatic. Published size is ~5 MB, and a visit to `/seasons` costs
+about 540 KB gzipped.
+
+The Python pipeline does **not** run in CI. The JSON and GeoJSON under `web/public/data/` are
+committed, so regenerate them locally and commit when the underlying data changes.
+
+Two constraints shape the deployment:
+
+- **Routing uses `HashRouter`.** GitHub Pages has no rewrite rule, so `/seasons` would 404 on a
+  refresh or a direct link. URLs look like `…/texas-mushrooms/#/seasons`.
+- **No photographs are served publicly.** texasmushrooms.org serves its images behind hotlink
+  protection, and a public site should not push its traffic onto someone else's server. With no
+  proxy configured the Seasons tooltip shows the color swatch, species and date instead of an
+  image, and every dot still links back to the source page. Run
+  `python -m texas_mushrooms.web_proxy --port 8001` locally and enter `http://localhost:8001` in
+  the page's proxy box to get hover previews while developing.
 
 Missing files degrade gracefully — the affected page renders an empty state prompting you to run the
 export.
@@ -197,7 +259,10 @@ export.
   - `photo_geospatial.csv` — photos with lat/lon for mapping.
   - `species_frequency.csv` — species occurrence counts.
   - `mushroom_daily.csv` — merged daily dataset with lagged rain + seasonality features.
-  - `photo_colors.csv` — cached dominant color per photo (for the Seasons viz).
+  - `photo_colors.csv` — cached per-photo color for the Seasons viz, keyed by
+    `(photo id, algorithm version)`. Stores the isolated subject color, the
+    whole-frame fallback, and the confidence/separation that choose between
+    them, so the fallback thresholds can be retuned without re-decoding images.
 - `data/outputs/` — model summaries (`*_model_summary.csv`), trace plots (`*_trace.png`),
   `spatial_daily_counts.csv`, and standalone folium H3 maps.
 

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
+
+import { dataUrl } from '../dataUrl'
 import { scaleSequential } from 'd3-scale'
 import { interpolateYlGnBu, interpolateYlOrRd, interpolatePuRd } from 'd3-scale-chromatic'
 
@@ -120,8 +122,8 @@ export default function MapPage() {
           if (!cancelled) setter(null)
         })
     }
-    load('/data/h3_cells.geojson', setTxGeojson)
-    load('/data/h3_cells_inat.geojson', setInatGeojson)
+    load(dataUrl('h3_cells.geojson'), setTxGeojson)
+    load(dataUrl('h3_cells_inat.geojson'), setInatGeojson)
     return () => {
       cancelled = true
     }

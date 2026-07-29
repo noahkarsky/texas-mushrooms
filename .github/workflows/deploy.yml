@@ -1,0 +1,73 @@
+name: Deploy web app to GitHub Pages
+
+# The site is fully static: the React build plus the JSON/GeoJSON already
+# committed under web/public/data/. Nothing in the Python pipeline runs here --
+# regenerate those assets locally and commit them when the data changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web
+
+      - name: Drop data the site does not read
+        # photos_index*.json (~9.8 MB) exists for the Python pipeline --
+        # export_season_assets.py reads it -- but no page fetches it since the
+        # Photos grid was removed. Vite copies all of public/ regardless, so
+        # prune it here rather than deleting a pipeline output from the repo.
+        # If a page ever loads it again, delete this step.
+        run: rm -f web/dist/data/photos_index.json web/dist/data/photos_index_inat.json
+
+      - name: Fail if the Seasons data is missing
+        # A build that silently ships without these produces an empty page.
+        run: |
+          for f in season_photos.json season_weather.json h3_cells.geojson; do
+            test -s "web/dist/data/$f" || { echo "missing web/dist/data/$f"; exit 1; }
+          done
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

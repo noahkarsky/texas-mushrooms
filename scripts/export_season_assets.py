@@ -3,39 +3,66 @@
 Produces two files consumed by the web app's ``/seasons`` page:
 
 * ``web/public/data/season_photos.json`` -- one record per photo, carrying the
-  dominant color extracted from the photographer's own image, its day-of-year,
-  and the metadata needed to link back to the source page.
+  dominant color of the mushroom in the photographer's own image, its
+  day-of-year, and the metadata needed to link back to the source page.
 * ``web/public/data/season_weather.json`` -- per-year, per-day-of-year rainfall,
   soil moisture, and a wetness anomaly (SPI-like z-score) that forms the
   background "mushrooms follow the rain" story.
 
-Color extraction is slow, so this is a standalone stage (not folded into the
-fast ``export_web_assets.py``). Results are cached in
-``data/processed/photo_colors.csv`` so re-runs are near-instant.
+Color extraction is slow, so it is a standalone stage (not folded into the fast
+``export_web_assets.py``). Results are cached in ``data/processed/photo_colors.csv``
+keyed by ``(photo id, algorithm version)``, so a retuned extractor recomputes
+rather than silently reusing stale rows.
+
+The cache stores the subject color, the whole-frame fallback color, and the
+confidence/separation that decide between them, so the fallback thresholds can be
+retuned at export time without re-decoding a single image.
 
 Run:
-    python scripts/export_season_assets.py
+    python scripts/export_season_assets.py                # full run
+    python scripts/export_season_assets.py --sample 200   # quick check
 """
 
 from __future__ import annotations
 
-import colorsys
+import argparse
 import json
-from collections import defaultdict
+import logging
+import sys
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import replace
 from datetime import date as date_cls
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pandas as pd
-from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from texas_mushrooms.pipeline.color import (  # noqa: E402
+    ALGO_VERSION,
+    ColorExtractionError,
+    ColorParams,
+    PhotoColor,
+    apply_fallback,
+    extract_photo_color,
+)
+from texas_mushrooms.pipeline.photo_assets import (  # noqa: E402
+    genus_of,
+    index_local_images,
+    match_local_file,
+    photo_id,
+)
+
+logger = logging.getLogger("export_season_assets")
+
 DATA_DIR = REPO_ROOT / "data"
 IMAGES_DIR = DATA_DIR / "raw" / "images"
 WEB_PUBLIC_DATA_DIR = REPO_ROOT / "web" / "public" / "data"
 
 PHOTOS_INDEX_JSON = WEB_PUBLIC_DATA_DIR / "photos_index.json"
+PHOTOS_RAW_CSV = DATA_DIR / "raw" / "photos.csv"
 PHOTOS_CLEANED_CSV = DATA_DIR / "processed" / "photos_cleaned.csv"
 DAILY_WEATHER_CSV = DATA_DIR / "external" / "daily_weather.csv"
 COLOR_CACHE_CSV = DATA_DIR / "processed" / "photo_colors.csv"
@@ -47,156 +74,195 @@ SEASON_WEATHER_JSON = WEB_PUBLIC_DATA_DIR / "season_weather.json"
 START_YEAR = 2018
 END_YEAR = 2024
 
-# A swatch this unsaturated is probably leaf litter / sky, not the mushroom.
-MIN_INTERESTING_SATURATION = 0.12
-N_SWATCHES = 3
+LEGACY_ALGO = "v1-octree"
+CACHE_COLUMNS = [
+    "id",
+    "algo",
+    "color",
+    "subject_color",
+    "frame_color",
+    "swatches",
+    "confidence",
+    "separation",
+    "background",
+    "source",
+]
+CACHE_FLUSH_EVERY = 500
 
 
 # --------------------------------------------------------------------------- #
-# Color extraction
+# Color cache
 # --------------------------------------------------------------------------- #
-def _hex(rgb: tuple[int, int, int]) -> str:
-    return "#%02x%02x%02x" % rgb
+CacheKey = tuple[str, str]
+CacheRow = dict[str, Any]
 
 
-def _saturation(rgb: tuple[int, int, int]) -> float:
-    r, g, b = (c / 255.0 for c in rgb)
-    return colorsys.rgb_to_hsv(r, g, b)[1]
+def _load_color_cache() -> dict[CacheKey, CacheRow]:
+    """Load cached measurements, keyed by ``(photo id, algorithm version)``.
 
-
-def _choose_color(swatches: list[tuple[int, int, int]]) -> str:
-    """Pick the dot color: the most common swatch, unless it is drab.
-
-    If the dominant swatch is desaturated (likely background), prefer the most
-    saturated of the top swatches so the dot reflects the mushroom itself.
+    Rows written before the cache carried a version are attributed to the legacy
+    octree extractor, so they can still be selected with ``--algo`` but never
+    satisfy a lookup for the current algorithm.
     """
-    if not swatches:
-        return "#888888"
-    dominant = swatches[0]
-    if _saturation(dominant) >= MIN_INTERESTING_SATURATION:
-        return _hex(dominant)
-    most_saturated = max(swatches, key=_saturation)
-    return _hex(most_saturated)
+    if not COLOR_CACHE_CSV.exists():
+        return {}
+    df = pd.read_csv(COLOR_CACHE_CSV)
+    if "algo" not in df.columns:
+        df["algo"] = LEGACY_ALGO
+    df["algo"] = df["algo"].fillna(LEGACY_ALGO)
+
+    cache: dict[CacheKey, CacheRow] = {}
+    for row in df.to_dict("records"):
+        key = (str(row["id"]), str(row["algo"]))
+        cache[key] = {col: row.get(col) for col in CACHE_COLUMNS}
+        cache[key]["id"], cache[key]["algo"] = key
+    return cache
 
 
-def extract_colors(path: Path) -> tuple[str, list[str]]:
-    """Return (chosen_color, [swatch_hex, ...]) for one image.
+def _write_color_cache(cache: dict[CacheKey, CacheRow]) -> None:
+    """Persist every algorithm's rows, so switching back with --algo is free."""
+    COLOR_CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
+    rows = [cache[key] for key in sorted(cache)]
+    pd.DataFrame(rows, columns=CACHE_COLUMNS).to_csv(COLOR_CACHE_CSV, index=False)
 
-    Uses Pillow's fast octree quantizer on a 64px thumbnail: deterministic,
-    dependency-light, and visually indistinguishable from k-means at this size.
+
+def _cache_row(pid: str, result: PhotoColor) -> CacheRow:
+    return {
+        "id": pid,
+        "algo": result.algo,
+        "color": result.color,
+        "subject_color": result.subject_color,
+        "frame_color": result.frame_color,
+        "swatches": "|".join(result.swatches),
+        "confidence": round(result.confidence, 4),
+        "separation": round(result.separation, 4),
+        "background": result.background,
+        "source": result.source,
+    }
+
+
+def _resolve_color(row: CacheRow, params: ColorParams) -> tuple[str, list[str]]:
+    """Apply the fallback gate to a cached measurement.
+
+    Legacy rows carry no confidence/separation, so they are used verbatim.
     """
-    with Image.open(path) as im:
-        rgb = im.convert("RGB")
-        rgb.thumbnail((64, 64), Image.Resampling.LANCZOS)
-        quantized = rgb.quantize(colors=N_SWATCHES, method=Image.Quantize.FASTOCTREE)
+    swatches = [s for s in str(row.get("swatches") or "").split("|") if s]
+    subject = row.get("subject_color")
+    frame = row.get("frame_color")
+    if not isinstance(subject, str) or not isinstance(frame, str):
+        return str(row.get("color")), swatches
 
-    palette = quantized.getpalette() or []
-    # getcolors -> list of (count, palette_index); sort most-common first.
-    counts = sorted(quantized.getcolors() or [], reverse=True)
-    swatches: list[tuple[int, int, int]] = []
-    for _, idx in counts[:N_SWATCHES]:
-        base = cast(int, idx) * 3  # idx is a palette index for a quantized image
-        swatches.append((palette[base], palette[base + 1], palette[base + 2]))
-
-    chosen = _choose_color(swatches)
-    return chosen, [_hex(s) for s in swatches]
-
-
-def _extract_one(args: tuple[str, str]) -> tuple[str, str, str, str]:
-    """Worker: (photo_id, path_str) -> (photo_id, color, swatches_str, path_str)."""
-    photo_id, path_str = args
-    color, swatches = extract_colors(Path(path_str))
-    return photo_id, color, "|".join(swatches), path_str
+    gated = apply_fallback(
+        PhotoColor(
+            color=str(row.get("color")),
+            subject_color=subject,
+            frame_color=frame,
+            swatches=tuple(swatches),
+            confidence=float(row.get("confidence") or 0.0),
+            separation=float(row.get("separation") or 0.0),
+            background=str(row.get("background") or ""),
+            source=str(row.get("source") or "frame"),
+        ),
+        params,
+    )
+    return gated.color, swatches
 
 
 # --------------------------------------------------------------------------- #
-# Local image matching
+# Extraction
 # --------------------------------------------------------------------------- #
-def _index_local_images() -> dict[str, list[Path]]:
-    """Map each ``YYYY-MM-DD`` directory name to its image files."""
-    by_date: dict[str, list[Path]] = defaultdict(list)
-    if not IMAGES_DIR.exists():
-        return by_date
-    for day_dir in IMAGES_DIR.iterdir():
-        if day_dir.is_dir():
-            by_date[day_dir.name] = [
-                p for p in day_dir.iterdir() if p.suffix.lower() == ".jpg"
-            ]
-    return by_date
+def _extract_one(args: tuple[str, str]) -> tuple[str, CacheRow | None]:
+    """Worker: (photo_id, path) -> cache row, or None if the file is unreadable."""
+    pid, path_str = args
+    try:
+        return pid, _cache_row(pid, extract_photo_color(Path(path_str)))
+    except ColorExtractionError as exc:
+        logging.getLogger("export_season_assets").warning("%s", exc)
+        return pid, None
 
 
-def _match_local_file(
-    date: str, photo_url: str, by_date: dict[str, list[Path]]
-) -> Path | None:
-    """Resolve a photo URL to its downloaded file.
+def _work_items() -> list[tuple[str, Path]]:
+    """Every downloaded image in the display window, as ``(photo id, path)``.
 
-    Disk files are prefixed (``018_12b.jpg``) while the URL basename is bare
-    (``12b.jpg``); match exact basename first, else the ``_<basename>`` suffix.
+    Driven by the raw scrape rather than by ``photos_index.json`` so that photos
+    currently excluded by the taxonomy and spatial filters are measured too --
+    loosening those filters then costs nothing.
     """
-    candidates = by_date.get(date)
-    if not candidates:
-        return None
-    basename = photo_url.rsplit("/", 1)[-1]
-    if not basename:
-        return None
-    suffix = "_" + basename
-    for path in candidates:
-        if path.name == basename or path.name.endswith(suffix):
-            return path
-    return None
+    df = pd.read_csv(PHOTOS_RAW_CSV, usecols=["date", "photo_url"])
+    df = df.dropna(subset=["date", "photo_url"])
+    year = df["date"].astype(str).str.slice(0, 4)
+    df = df[(year >= str(START_YEAR)) & (year <= str(END_YEAR))]
+
+    by_date = index_local_images(IMAGES_DIR)
+    items: dict[str, Path] = {}
+    for row in df.itertuples(index=False):
+        url = str(getattr(row, "photo_url"))
+        local = match_local_file(str(getattr(row, "date")), url, by_date)
+        if local is not None:
+            items.setdefault(photo_id(url), local)
+    return sorted(items.items())
+
+
+def extract_colors(
+    *,
+    algo: str,
+    limit: int | None,
+    sample: int | None,
+    force: bool,
+    workers: int | None,
+    seed: int,
+) -> None:
+    """Measure every image that has no cached result for the current algorithm."""
+    if algo != ALGO_VERSION:
+        logger.info("--algo %s selected; skipping extraction", algo)
+        return
+
+    cache = _load_color_cache()
+    pending = [
+        (pid, path)
+        for pid, path in _work_items()
+        if force or (pid, ALGO_VERSION) not in cache
+    ]
+
+    if sample is not None and sample < len(pending):
+        rng = pd.Series(range(len(pending))).sample(n=sample, random_state=seed)
+        pending = [pending[i] for i in sorted(rng)]
+    elif limit is not None:
+        pending = pending[:limit]
+
+    if not pending:
+        logger.info("All colors already cached for %s.", ALGO_VERSION)
+        return
+
+    logger.info("Extracting colors for %d images (%s)...", len(pending), ALGO_VERSION)
+    jobs = [(pid, str(path)) for pid, path in pending]
+    failures = 0
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        for i, (pid, row) in enumerate(
+            pool.map(_extract_one, jobs, chunksize=32), start=1
+        ):
+            if row is None:
+                failures += 1
+            else:
+                cache[(pid, ALGO_VERSION)] = row
+            # Flush periodically: a full run reads tens of GB and must survive
+            # being interrupted partway through.
+            if i % CACHE_FLUSH_EVERY == 0:
+                _write_color_cache(cache)
+                logger.info("  ...%d/%d", i, len(pending))
+    _write_color_cache(cache)
+    logger.info("Extraction complete (%d unreadable).", failures)
 
 
 # --------------------------------------------------------------------------- #
 # season_photos.json
 # --------------------------------------------------------------------------- #
-def _load_color_cache() -> dict[str, tuple[str, list[str]]]:
-    if not COLOR_CACHE_CSV.exists():
-        return {}
-    df = pd.read_csv(COLOR_CACHE_CSV)
-    cache: dict[str, tuple[str, list[str]]] = {}
-    for row in df.itertuples(index=False):
-        swatches_raw = str(getattr(row, "swatches", "") or "")
-        swatches = [s for s in swatches_raw.split("|") if s]
-        cache[str(getattr(row, "id"))] = (str(getattr(row, "color")), swatches)
-    return cache
-
-
-def _write_color_cache(cache: dict[str, tuple[str, list[str]]]) -> None:
-    COLOR_CACHE_CSV.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        {"id": pid, "color": color, "swatches": "|".join(swatches)}
-        for pid, (color, swatches) in sorted(cache.items())
-    ]
-    pd.DataFrame(rows, columns=["id", "color", "swatches"]).to_csv(
-        COLOR_CACHE_CSV, index=False
-    )
-
-
 def _day_of_year(date_str: str) -> int | None:
     try:
         y, m, d = (int(x) for x in date_str.split("-"))
         return date_cls(y, m, d).timetuple().tm_yday
     except (ValueError, AttributeError):
         return None
-
-
-# Tokens that look like a leading genus word but are not one.
-_NON_GENUS = {"unidentified", "cf", "aff", "unknown", "sp", "spp"}
-
-
-def _genus_of(scientific: str) -> str | None:
-    """Derive a genus from a scientific name string.
-
-    Takes the first whitespace-delimited token, accepts it only if it is a
-    capitalized alphabetic word that is not a placeholder ("Unidentified", ...).
-    """
-    token = scientific.strip().split()[0] if scientific.strip() else ""
-    token = token.strip(".,;:()[]")
-    if not token or not token.isalpha() or not token[0].isupper():
-        return None
-    if token.lower() in _NON_GENUS:
-        return None
-    return token
 
 
 def _photo_meta_lookup() -> dict[str, tuple[str | None, str | None]]:
@@ -214,49 +280,21 @@ def _photo_meta_lookup() -> dict[str, tuple[str | None, str | None]]:
         name: str | None = common or species
         if not name or name.lower() == "nan":
             name = None
-        genus = _genus_of(species) if species.lower() != "nan" else None
+        genus = genus_of(species) if species.lower() != "nan" else None
         lookup[url] = (name, genus)
     return lookup
 
 
-def export_season_photos() -> None:
+def export_season_photos(algo: str, params: ColorParams) -> None:
     photos: list[dict[str, Any]] = json.loads(
         PHOTOS_INDEX_JSON.read_text(encoding="utf-8")
     )
-    by_date = _index_local_images()
     cache = _load_color_cache()
     meta = _photo_meta_lookup()
 
-    # Resolve which photos still need color extraction.
-    pending: list[tuple[str, str]] = []
-    matched_path: dict[str, Path] = {}
-    for p in photos:
-        pid = str(p["id"])
-        if pid in cache:
-            continue
-        local = _match_local_file(
-            str(p.get("date", "")), str(p.get("photo_url", "")), by_date
-        )
-        if local is not None:
-            matched_path[pid] = local
-            pending.append((pid, str(local)))
-
-    if pending:
-        print(f"Extracting colors for {len(pending)} images (parallel)...")
-        with ProcessPoolExecutor() as pool:
-            for i, (pid, dot_color, swatches_str, _path) in enumerate(
-                pool.map(_extract_one, pending, chunksize=32), start=1
-            ):
-                sw = [s for s in swatches_str.split("|") if s]
-                cache[pid] = (dot_color, sw)
-                if i % 500 == 0:
-                    print(f"  ...{i}/{len(pending)}")
-        _write_color_cache(cache)
-    else:
-        print("All colors already cached.")
-
     out_rows: list[dict[str, Any]] = []
     no_color = 0
+    from_subject = 0
     for p in photos:
         pid = str(p["id"])
         date_str = str(p.get("date", ""))
@@ -269,10 +307,13 @@ def export_season_photos() -> None:
 
         color: str | None = None
         swatches: list[str] = []
-        if pid in cache:
-            color, swatches = cache[pid]
-        else:
+        row = cache.get((pid, algo))
+        if row is None:
             no_color += 1
+        else:
+            color, swatches = _resolve_color(row, params)
+            if row.get("source") == "subject":
+                from_subject += 1
 
         species, genus = meta.get(str(p.get("photo_url", "")), (None, None))
         label = p.get("label_species")
@@ -280,7 +321,7 @@ def export_season_photos() -> None:
             if not species:
                 species = str(label)
             if not genus:
-                genus = _genus_of(str(label))
+                genus = genus_of(str(label))
 
         out_rows.append(
             {
@@ -301,9 +342,12 @@ def export_season_photos() -> None:
     SEASON_PHOTOS_JSON.write_text(
         json.dumps(out_rows, separators=(",", ":")), encoding="utf-8"
     )
-    print(
-        f"Wrote {SEASON_PHOTOS_JSON} "
-        f"({len(out_rows)} photos, {no_color} without a local image)"
+    logger.info(
+        "Wrote %s (%d photos, %d without a local image, %d from subject isolation)",
+        SEASON_PHOTOS_JSON,
+        len(out_rows),
+        no_color,
+        from_subject,
     )
 
 
@@ -391,12 +435,59 @@ def export_season_weather() -> None:
     SEASON_WEATHER_JSON.write_text(
         json.dumps(payload, separators=(",", ":")), encoding="utf-8"
     )
-    print(f"Wrote {SEASON_WEATHER_JSON} (years {years[0]}-{years[-1]})")
+    logger.info("Wrote %s (years %d-%d)", SEASON_WEATHER_JSON, years[0], years[-1])
 
 
+# --------------------------------------------------------------------------- #
+# CLI
+# --------------------------------------------------------------------------- #
 def main() -> None:
-    export_season_photos()
-    export_season_weather()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limit", type=int, default=None, help="cap pending images")
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=None,
+        help="random subset of pending images (--limit is date-ordered, so it "
+        "correlates with season and location)",
+    )
+    parser.add_argument("--force", action="store_true", help="re-extract cached images")
+    parser.add_argument(
+        "--algo", default=ALGO_VERSION, choices=[ALGO_VERSION, LEGACY_ALGO]
+    )
+    parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--min-confidence", type=float, default=ColorParams().min_confidence
+    )
+    parser.add_argument(
+        "--min-separation", type=float, default=ColorParams().min_separation
+    )
+    parser.add_argument("--photos-only", action="store_true")
+    parser.add_argument("--weather-only", action="store_true")
+    parser.add_argument("--skip-extract", action="store_true")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    params = replace(
+        ColorParams(),
+        min_confidence=args.min_confidence,
+        min_separation=args.min_separation,
+    )
+
+    if not args.weather_only:
+        if not args.skip_extract:
+            extract_colors(
+                algo=args.algo,
+                limit=args.limit,
+                sample=args.sample,
+                force=args.force,
+                workers=args.workers,
+                seed=args.seed,
+            )
+        export_season_photos(args.algo, params)
+    if not args.photos_only:
+        export_season_weather()
 
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 import requests
 from PIL import Image
 
+from texas_mushrooms.pipeline.photo_assets import index_local_images, match_local_file
+
 try:
     # Keep UA consistent with the scraper.
     from texas_mushrooms.scrape.core import USER_AGENT
@@ -88,6 +90,21 @@ class Handler(BaseHTTPRequestHandler):
     def thumb_root(self) -> Path:
         return cast(Path, self.server.thumb_root)  # type: ignore[attr-defined]
 
+    def _local_copy(self, date: str, url: str) -> Path | None:
+        """Resolve a photo URL to its already-downloaded file, if we have it.
+
+        The scrape keeps every image under ``data/raw/images/<date>/``, so a
+        hover preview almost never needs the network. The date disambiguates:
+        basenames like ``12b.jpg`` repeat across days.
+        """
+        if not date:
+            return None
+        index = cast(
+            "dict[str, list[Path]]",
+            self.server.local_index,  # type: ignore[attr-defined]
+        )
+        return match_local_file(date, url, index)
+
     def _send_text(self, status: int, body: str) -> None:
         data = body.encode("utf-8")
         self.send_response(status)
@@ -150,6 +167,7 @@ class Handler(BaseHTTPRequestHandler):
         qs = parse_qs(query)
         url = (qs.get("url") or qs.get("u") or [""])[0]
         ref = (qs.get("ref") or qs.get("r") or [""])[0]
+        date = (qs.get("date") or qs.get("d") or [""])[0].strip()
         width = _parse_width(qs)
 
         url = url.strip()
@@ -177,6 +195,26 @@ class Handler(BaseHTTPRequestHandler):
                 with contextlib.suppress(OSError):
                     self._send_jpeg(cache_path.read_bytes())
                     return
+
+        # Prefer the copy we already scraped. Every photo in the display window
+        # is on disk, so this turns a multi-second upstream round trip into a
+        # local read -- and sends the source site no traffic at all.
+        local = self._local_copy(date, url)
+        if local is not None:
+            try:
+                raw = local.read_bytes()
+            except OSError:
+                raw = b""
+            if raw:
+                if width is None:
+                    self._send_jpeg(raw)
+                    return
+                thumb = _resize_jpeg(raw, width)
+                if cache_path is not None:
+                    with contextlib.suppress(OSError):
+                        cache_path.write_bytes(thumb)
+                self._send_jpeg(thumb)
+                return
 
         headers = {
             "User-Agent": USER_AGENT,
@@ -264,15 +302,27 @@ def main() -> None:
     # Ensure mime types are known on Windows.
     mimetypes.init()
 
+    # Index the scrape once at startup so /proxy can answer from disk. Disk
+    # names carry an on-page ordinal prefix the photo URL doesn't, so a lookup
+    # table is cheaper than probing the filesystem per request.
+    local_index = index_local_images(images_root)
+    local_count = sum(len(v) for v in local_index.values())
+
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.images_root = images_root  # type: ignore[attr-defined]
     httpd.thumb_root = thumb_root  # type: ignore[attr-defined]
+    httpd.local_index = local_index  # type: ignore[attr-defined]
 
     print(f"Serving on http://{args.host}:{args.port}")
     print(f"Local images root: {images_root}")
     print("- Local images:   /YYYY-MM-DD/<filename>.jpg")
-    print("- Remote proxy:   /proxy?url=<photo_url>&ref=<page_url>[&w=<max_width>]")
+    print(
+        "- Remote proxy:   /proxy?url=<photo_url>&ref=<page_url>"
+        "[&date=YYYY-MM-DD][&w=<max_width>]"
+    )
     print(f"- Thumb cache:    {thumb_root}")
+    print(f"- Indexed {local_count} local images across {len(local_index)} days")
+    print("  (pass &date= to serve from disk instead of fetching upstream)")
 
     with contextlib.suppress(KeyboardInterrupt):
         httpd.serve_forever()

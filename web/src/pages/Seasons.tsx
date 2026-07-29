@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { dataUrl } from '../dataUrl'
+
 // --------------------------------------------------------------------------- //
 // Types
 // --------------------------------------------------------------------------- //
@@ -238,7 +240,12 @@ function smooth7(counts: number[]): number[] {
 export default function SeasonsPage() {
   const [photos, setPhotos] = useState<SeasonPhoto[] | null>(null)
   const [weather, setWeather] = useState<SeasonWeather | null>(null)
-  const [proxyBase, setProxyBase] = useState('http://localhost:8001')
+  // Only default to the local companion server during development. In a
+  // published build there is no proxy, and the tooltip shows the color swatch
+  // and metadata instead of a photo.
+  const [proxyBase, setProxyBase] = useState(
+    import.meta.env.DEV ? 'http://localhost:8001' : '',
+  )
   const [filter, setFilter] = useState('')
   const [focusYear, setFocusYear] = useState<number | null>(null)
   const [combined, setCombined] = useState(false)
@@ -256,11 +263,11 @@ export default function SeasonsPage() {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      fetch('/data/season_photos.json').then((r) => {
+      fetch(dataUrl('season_photos.json')).then((r) => {
         if (!r.ok) throw new Error(`season_photos.json: ${r.status}`)
         return r.json()
       }),
-      fetch('/data/season_weather.json').then((r) => {
+      fetch(dataUrl('season_weather.json')).then((r) => {
         if (!r.ok) throw new Error(`season_weather.json: ${r.status}`)
         return r.json()
       }),
@@ -1142,9 +1149,16 @@ export default function SeasonsPage() {
       const base = proxyBase.trim().replace(/\/$/, '')
       const url = (photo.photo_url ?? '').trim()
       if (!url) return ''
-      if (!base) return url
+      // Without a proxy, show no image at all rather than hotlinking the
+      // source site: it serves these behind hotlink protection, and a public
+      // deployment must not push its traffic onto someone else's server.
+      if (!base) return ''
       const params = new URLSearchParams({ url })
       if (photo.page_url) params.set('ref', photo.page_url)
+      // The date lets the proxy serve the already-scraped local copy instead of
+      // re-fetching from the source site, which is the difference between an
+      // instant preview and a multi-second wait.
+      if (photo.date) params.set('date', photo.date)
       if (maxWidth) params.set('w', String(maxWidth))
       return `${base}/proxy?${params.toString()}`
     },
@@ -1292,7 +1306,27 @@ export default function SeasonsPage() {
           }}
         >
           {proxyImgSrc ? (
-            <img className="season-tooltip-img" src={proxyImgSrc} alt={hovered.photo.species ?? 'mushroom'} />
+            // Hold the photo's own color while it decodes, so a slow load reads
+            // as the mushroom rather than as a black hole in the tooltip.
+            <div
+              className="season-tooltip-imgwrap"
+              style={{ backgroundColor: hovered.photo.color ?? NULL_DOT }}
+            >
+              <img
+                key={proxyImgSrc}
+                className="season-tooltip-img"
+                src={proxyImgSrc}
+                alt={hovered.photo.species ?? 'mushroom'}
+                // Both paths are needed. Local-disk previews are fast enough to
+                // come straight from the browser cache, where load can complete
+                // before onLoad is attached -- without the ref check those
+                // images would stay at opacity 0 forever.
+                ref={(el) => {
+                  if (el?.complete && el.naturalWidth > 0) el.classList.add('is-loaded')
+                }}
+                onLoad={(e) => e.currentTarget.classList.add('is-loaded')}
+              />
+            </div>
           ) : null}
           <div
             className="swatch-chip"
