@@ -1200,9 +1200,9 @@ export default function SeasonsPage() {
   return (
     <div className="page seasons">
       <div className="page-header seasons-header">
-        <div className="seasons-masthead">
-          <h1 className="seasons-title">Mushrooms follow the rain</h1>
-          <p className="seasons-intro">
+        <div className="masthead">
+          <h1 className="masthead-title">Mushrooms follow the rain</h1>
+          <p className="masthead-intro">
             Every dot is a single photograph, placed by the day it was taken and painted in the
             mushroom&rsquo;s own colors. The background runs blue in wetter-than-normal stretches and
             amber in drier ones, across the 2018&ndash;2024 seasons near Houston.
