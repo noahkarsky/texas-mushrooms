@@ -3,7 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Texas Mushrooms</title>
+
+    <title>Texas Mushrooms — seventeen years of one man's fungi photographs, mapped</title>
+    <meta
+      name="description"
+      content="8,800 mushroom photographs from the Houston and Big Thicket area, 2018–2024: a hex map of where they were found, a seasonal calendar painted in each mushroom's own measured color, and Bayesian models of when and where they fruit."
+    />
+    <meta name="theme-color" content="#0c0e12" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Relative, so it resolves under the /texas-mushrooms/ project subpath.
+         The route hash is not part of the path, so this is safe on every route. -->
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+
+    <!-- Absolute by necessity: crawlers do not run JS and do not reliably
+         resolve relative og: URLs, so import.meta.env.BASE_URL is no help here.
+         No og:image — the site is forbidden from serving photographs, and a
+         summary_large_image card pointing at nothing renders worse than a
+         plain summary card. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Texas Mushrooms" />
+    <meta property="og:title" content="Texas Mushrooms" />
+    <meta
+      property="og:description"
+      content="Seventeen years of one man's mushroom photographs, turned into a map and a calendar. 8,800 photographs, 718 species, 2018–2024."
+    />
+    <meta property="og:url" content="https://noahkarsky.github.io/texas-mushrooms/" />
+    <meta name="twitter:card" content="summary" />
   </head>
   <body>
     <div id="root"></div>

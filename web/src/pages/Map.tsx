@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { GeoJSON, MapContainer, TileLayer, useMap } from 'react-leaflet'
 import * as L from 'leaflet'
 
+// Imported here rather than in main.tsx so it lands in this lazily-loaded chunk
+// instead of the entry bundle — the landing page has no map on it.
+import 'leaflet/dist/leaflet.css'
+
 import { dataUrl } from '../dataUrl'
 import { scaleSequential } from 'd3-scale'
 import { interpolateYlGnBu, interpolateYlOrRd, interpolatePuRd } from 'd3-scale-chromatic'
@@ -141,7 +145,17 @@ export default function MapPage() {
 
   return (
     <div className="page">
-      <div className="page-header">
+      <div className="page-header map-header">
+        <div className="masthead">
+          <h1 className="masthead-title">Where the mushrooms were found</h1>
+          <p className="masthead-intro">
+            Each hexagon is an H3 resolution-7 cell, shaded by how many photographs fall inside it
+            or by its mean elevation. Switching the source contrasts one person&rsquo;s 46 cells
+            against iNaturalist&rsquo;s 1,342 over the same bounding box &mdash; the difference
+            between a route and a crowd.
+          </p>
+        </div>
+
         <div className="row">
           <strong>Source</strong>
           <select className="select" value={source} onChange={(e) => setSource(e.target.value as Source)}>
@@ -155,7 +169,7 @@ export default function MapPage() {
             <option value="elevation">Elevation (m)</option>
           </select>
         </div>
-        <div style={{ fontSize: 12, color: '#444' }}>
+        <div className="map-note">
           {anyData ? (
             <span>
               {showTx && txGeojson ? `texasmushrooms: ${txGeojson.features.length} cells` : ''}

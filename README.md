@@ -169,10 +169,12 @@ For a production build: `npm run build` (output in `web/dist/`), preview with `n
 
 | Route | What it shows |
 | --- | --- |
-| `/` (Map) | Leaflet map of H3 res-7 cells, colored by total photos or mean elevation. Source toggle: texasmushrooms.org / iNaturalist / both. |
+| `/` (Home) | Landing page — who the archive belongs to, what each visualization answers, and the model results with their caveats. Fetches no data. |
+| `/map` | Leaflet map of H3 res-7 cells, colored by total photos or mean elevation. Source toggle: texasmushrooms.org / iNaturalist / both. |
 | `/seasons` | Canvas visualization — one dot per photo by day-of-year, painted the mushroom's dominant color (see [How the dot colors are measured](#how-the-dot-colors-are-measured)), over a wet/dry weather ribbon. Year zoom, month filter, species filter, hover previews. |
 
-Routes are hash-based (`#/seasons`) so they survive a refresh on GitHub Pages.
+Routes are hash-based (`#/map`, `#/seasons`) so they survive a refresh on GitHub Pages. Map and
+Seasons are lazily loaded, so the landing page ships neither Leaflet nor the Seasons canvas code.
 
 ### How the dot colors are measured
 
@@ -234,7 +236,8 @@ committed, so regenerate them locally and commit when the underlying data change
 Two constraints shape the deployment:
 
 - **Routing uses `HashRouter`.** GitHub Pages has no rewrite rule, so `/seasons` would 404 on a
-  refresh or a direct link. URLs look like `…/texas-mushrooms/#/seasons`.
+  refresh or a direct link. URLs look like `…/texas-mushrooms/#/seasons`. A consequence worth
+  knowing: the router owns the hash, so in-page `<a href="#section">` anchors do not work.
 - **No photographs are served publicly.** texasmushrooms.org serves its images behind hotlink
   protection, and a public site should not push its traffic onto someone else's server. With no
   proxy configured the Seasons tooltip shows the color swatch, species and date instead of an
