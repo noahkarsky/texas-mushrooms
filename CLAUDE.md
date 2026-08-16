@@ -90,6 +90,7 @@ texas-mushrooms/
 ├── scripts/                   # prepare_datasets, run_spatial_analysis,
 │                              # export_web_assets, export_season_assets, run_web.ps1
 ├── web/                       # React + Vite UI (src/pages/{Home,Map,Seasons}.tsx)
+├── docs/                      # development.md (setup/pipeline/deploy), color-measurement.md
 ├── notebooks/                 # EDA.ipynb, spatial_analysis.ipynb
 ├── tests/                     # test_scraper.py, test_run_spatial_analysis.py
 ├── config/mushroom_filter.yaml  # taxonomy filter config (edit here, not in code)
@@ -98,8 +99,8 @@ texas-mushrooms/
 
 ## Architecture notes
 
-- **`src/texas_mushrooms/scrape/`** — `core.py` does all HTTP/HTML work (checks `robots.txt`, custom `USER_AGENT`, `BASE_URL`, `html.parser`). `schemas.py` defines the internal models as **`dataclasses`** (`DayPage`, `PhotoRecord`, `SpeciesRef`) — the README's mention of Pydantic is stale; use `dataclasses.asdict`, not `model_dump`.
-- **Geolocation** is derived from per-day KMZ (zipped KML) files. Photo filenames (`.../archives/YYYY/ROLL/jpeg/NNb.jpg`) map to a `ROLL-NN` key matched against KML Placemark names; the day's first point is the fallback. See README "Geolocation Details".
+- **`src/texas_mushrooms/scrape/`** — `core.py` does all HTTP/HTML work (checks `robots.txt`, custom `USER_AGENT`, `BASE_URL`, `html.parser`). `schemas.py` defines the internal models as **`dataclasses`** (`DayPage`, `PhotoRecord`, `SpeciesRef`) — use `dataclasses.asdict`, not `model_dump`.
+- **Geolocation** is derived from per-day KMZ (zipped KML) files. Photo filenames (`.../archives/YYYY/ROLL/jpeg/NNb.jpg`) map to a `ROLL-NN` key matched against KML Placemark names; the day's first point is the fallback. See `docs/development.md` "Geolocation details".
 - **`pipeline/processing.py`** — the heart of stage 3. `run_full_pipeline` = `run_preprocessing` (clean photos, parse species, spatial + taxonomy filters, geospatial/frequency exports) then `build_modeling_dataset` (daily calendar from weather, mushroom presence, lagged rain + seasonality features → `mushroom_daily.csv`).
 - **`modeling/bayesian.py`** — `BayesianMushroomModel` builds Poisson / zero-inflated-Poisson (ZIP) PyMC models. Weather predictors: `rain_1d`, `rain_3d`, `rain_7d` (rolling), `temp_range`, seasonal `sin`/`cos` day-of-year features. `scripts/run_spatial_analysis.py` runs two models: weather-predictor ZIP on `mushroom_daily.csv`, and elevation ZIP on H3-binned photos.
 - **`scrape/inaturalist.py`** — a **separate, parallel data source** to the texasmushrooms.org scraper. Fetches research-grade fungi (`taxon_id=47170`, `quality_grade=research`) from the public iNaturalist API for a bbox (default `SpatialFilter.default()`), cursor-paginated via `id_above` to bypass the 10k-result cap. Emits observation-level + photo-level records under `data/raw/inaturalist/`; images are only downloaded when the photo license permits redistribution (`DOWNLOADABLE_LICENSES`). Wired as the `inat` CLI subcommand. `scripts/export_web_assets.py` emits **separate** web assets for it — `web/public/data/{h3_cells_inat.geojson,photos_index_inat.json}` tagged `source: "inaturalist"` — and the Map page has a source toggle (texasmushrooms / iNaturalist / both). iNat data is intentionally **not** fed into the Bayesian models or the Seasons viz.
