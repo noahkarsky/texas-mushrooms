@@ -7,7 +7,7 @@ images, which need the local proxy (see below).
 ## Prereqs
 
 - Node.js (LTS), so you have `node` + `npm` on PATH.
-- The Python side already run through stage 5 of the pipeline (see the root README).
+- The Python side already run through stage 5 of the pipeline (see [`docs/development.md`](../docs/development.md)).
 
 ## Quick start
 
@@ -93,7 +93,7 @@ Map and Seasons are `React.lazy` chunks; only Home is in the entry bundle, and `
 is imported from `pages/Map.tsx` so it does not load for visitors who never open the map.
 
 A Photos grid used to live at `/photos`; it was removed because the site cannot serve photographs
-publicly — see the deployment notes in the root README.
+publicly — see the deployment notes in [`docs/development.md`](../docs/development.md).
 
 ## Stack
 

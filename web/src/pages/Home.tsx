@@ -3,6 +3,8 @@ import { HERO_DOTS } from '../heroDots'
 
 const TEXAS_MUSHROOMS_URL = 'https://www.texasmushrooms.org/'
 const REPO_URL = 'https://github.com/noahkarsky/texas-mushrooms'
+const COLOR_DOCS_URL =
+  'https://github.com/noahkarsky/texas-mushrooms/blob/main/docs/color-measurement.md'
 const INAT_URL = 'https://www.inaturalist.org/'
 
 /**
@@ -227,7 +229,7 @@ export default function HomePage() {
             roughly 1,890 photographer-stated caption colors, against a chance floor near 0.04.
             Better than chance and better than the whole-frame extractor it replaced, but it is a
             measurement with known regressions, not a classifier &mdash; the{' '}
-            <Out href={REPO_URL}>repository README</Out> documents where it fails.
+            <Out href={COLOR_DOCS_URL}>measurement notes</Out> document where it fails.
           </p>
           <p className="home-p">
             No photographs are served here. The source site uses hotlink protection, and a public
